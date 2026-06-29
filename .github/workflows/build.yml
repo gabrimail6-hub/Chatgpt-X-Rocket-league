@@ -34,7 +34,7 @@ jobs:
             TakeoffCoach.cpp ^
             /link ^
             /LIBPATH:"BakkesModSDK\lib" ^
-            bakkesmod.lib ^
+            pluginsdk.lib ^
             /OUT:"build\TakeoffCoach.dll"
 
       - name: Copy config
