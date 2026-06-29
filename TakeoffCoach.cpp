@@ -35,7 +35,7 @@ void TakeoffCoach::onLoad()
 {
     registerCvarsAndCommands();
 
-    gameWrapper->HookEventWithCaller(
+    gameWrapper->HookEventWithCaller<CarWrapper>(
         "Function TAGame.Car_TA.SetVehicleInput",
         [this](CarWrapper caller, void* params, std::string eventName)
         {
