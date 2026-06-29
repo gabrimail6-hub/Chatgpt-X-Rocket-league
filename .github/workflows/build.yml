@@ -20,10 +20,10 @@ jobs:
           repository: bakkesmodorg/BakkesModSDK
           path: BakkesModSDK
 
-      - name: Enable 32-bit MSVC compiler
+      - name: Enable 64-bit MSVC compiler
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: x86
+          arch: x64
 
       - name: Compile DLL
         shell: cmd
