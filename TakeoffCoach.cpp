@@ -1,169 +1,1243 @@
 #include "TakeoffCoach.h"
+
 #include "bakkesmod/wrappers/GameEvent/ServerWrapper.h"
 #include "IMGUI/imgui.h"
+
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
-#include <limits>
 #include <sstream>
+#include <vector>
 
-BAKKESMOD_PLUGIN(TakeoffCoach,"Takeoff Coach","3.0.0",PLUGINTYPE_FREEPLAY)
+BAKKESMOD_PLUGIN(
+    TakeoffCoach,
+    "Takeoff Coach",
+    "3.1.0",
+    PLUGINTYPE_FREEPLAY
+)
 
-namespace {
-constexpr float PI=3.14159265358979323846f, D2R=PI/180.f, R2D=180.f/PI;
-constexpr float G=-650.f, BOOST=991.7f, JUMP=292.f, CONTACT=170.f;
-constexpr float SAFE_X=3550.f, SAFE_Y=4550.f, SAFE_Z=1850.f, FLOOR_Z=105.f;
-void col(CanvasWrapper& c,int r,int g,int b,int a){c.SetColor((char)r,(char)g,(char)b,(char)a);}
+namespace
+{
+    constexpr float PI = 3.14159265358979323846f;
+    constexpr float DEG_TO_RAD = PI / 180.0f;
+    constexpr float RAD_TO_DEG = 180.0f / PI;
+
+    constexpr float GRAVITY_Z = -650.0f;
+    constexpr float BOOST_ACCEL = 991.7f;
+    constexpr float FIRST_JUMP = 292.0f;
+    constexpr float SECOND_JUMP = 292.0f;
+
+    constexpr float SAFE_X = 3500.0f;
+    constexpr float SAFE_Y = 4500.0f;
+    constexpr float SAFE_FLOOR = 105.0f;
+    constexpr float SAFE_CEILING = 1800.0f;
+
+    void setColor(CanvasWrapper& canvas, int r, int g, int b, int a)
+    {
+        canvas.SetColor(
+            static_cast<char>(r),
+            static_cast<char>(g),
+            static_cast<char>(b),
+            static_cast<char>(a));
+    }
 }
 
-void TakeoffCoach::onLoad(){
-    registerAll();
-    gameWrapper->HookEventWithCaller<CarWrapper>("Function TAGame.Car_TA.SetVehicleInput",[this](CarWrapper c,void* p,std::string e){onInput(c,p,e);});
-    gameWrapper->RegisterDrawable([this](CanvasWrapper c){draw(c);});
-    cvarManager->log("Takeoff Coach 3 loaded");
-}
-void TakeoffCoach::onUnload(){gameWrapper->UnhookEvent("Function TAGame.Car_TA.SetVehicleInput");gameWrapper->UnregisterDrawables();}
+void TakeoffCoach::onLoad()
+{
+    registerCvars();
 
-void TakeoffCoach::registerAll(){
-    auto r=[this](const char* n,const char* v,float lo,float hi){cvarManager->registerCvar(n,v,"",true,true,lo,true,hi);};
-    r("tc_objective","2",0,3); r("tc_auto_reset","1",0,1); r("tc_observation","0.65",0,3); r("tc_feedback_time","2.8",0.5,10); r("tc_goal_sign","1",-1,1);
-    r("tc_distance_lo","2800",1500,6000); r("tc_distance_hi","4400",1500,6000); r("tc_lateral_lo","-1000",-2200,2200); r("tc_lateral_hi","1000",-2200,2200);
-    r("tc_height_lo","220",120,1500); r("tc_height_hi","700",120,1500); r("tc_rotation_lo","-120",-180,180); r("tc_rotation_hi","120",-180,180);
-    r("tc_facing_lo","-15",-90,90); r("tc_facing_hi","15",-90,90); r("tc_car_speed_lo","700",0,2300); r("tc_car_speed_hi","1800",0,2300);
-    r("tc_car_angle_lo","-10",-120,120); r("tc_car_angle_hi","10",-120,120); r("tc_ball_speed_lo","450",0,2200); r("tc_ball_speed_hi","1500",0,2200);
-    r("tc_ball_up_lo","250",-500,1600); r("tc_ball_up_hi","1000",-500,1600); r("tc_ball_dir_lo","-180",-180,180); r("tc_ball_dir_hi","180",-180,180);
-    r("tc_contact_lo","0.65",0.35,2); r("tc_contact_hi","2.30",0.8,4); r("tc_solver_hz","20",5,60); r("tc_strictness","0.55",0,1);
-    r("tc_pos_tolerance","145",80,300); r("tc_horiz_cal","0.76",0.4,1.2); r("tc_vert_cal","0.78",0.4,1.2); r("tc_control_target","700",200,1600);
-    r("tc_show_hud","1",0,1); r("tc_show_timing","1",0,1); r("tc_show_alignment","1",0,1); r("tc_show_reach","1",0,1); r("tc_show_numbers","1",0,1);
-    r("tc_show_contact","1",0,1); r("tc_show_direction","1",0,1); r("tc_hud_position","0",0,2); r("tc_hud_scale","1",0.65,1.6); r("tc_hud_opacity","0.88",0.25,1);
-    r("tc_green_ms","55",20,160); r("tc_yellow_early_ms","180",70,500); r("tc_yellow_late_ms","130",50,400); r("tc_green_align","4",1,15); r("tc_yellow_align","11",4,30);
-    constexpr unsigned char P=PERMISSION_FREEPLAY;
-    cvarManager->registerNotifier("tc_start",[this](std::vector<std::string>){requestStart();},"Start",P);
-    cvarManager->registerNotifier("tc_new",[this](std::vector<std::string>){requestStart();},"New setup",P);
-    cvarManager->registerNotifier("tc_stop",[this](std::vector<std::string>){stop();},"Stop",P);
+    gameWrapper->HookEventWithCaller<CarWrapper>(
+        "Function TAGame.Car_TA.SetVehicleInput",
+        [this](CarWrapper car, void* params, std::string eventName)
+        {
+            onVehicleInput(car, params, eventName);
+        });
+
+    gameWrapper->RegisterDrawable(
+        [this](CanvasWrapper canvas)
+        {
+            renderHud(canvas);
+        });
+
+    cvarManager->log("Takeoff Coach 3.1 loaded.");
 }
 
-void TakeoffCoach::requestStart(){auto id=++a_.id;gameWrapper->SetTimeout([this,id](GameWrapper*){startNow(id);},0.06f);}
-void TakeoffCoach::startNow(unsigned long long id){
-    if(id!=a_.id)return;
-    if(!gameWrapper->IsInFreeplay()){a_.phase=Phase::Idle;a_.status="Enter Freeplay first";return;}
-    Scenario s; bool ok=false; for(int k=0;k<50&&!ok;k++)ok=makeScenario(s);
-    if(!ok||!applyScenario(s)){a_.phase=Phase::Idle;a_.status="No safe setup: narrow ranges";return;}
-    a_.scenario=s;a_.objective=s.objective;a_.phase=Phase::Observation;a_.solution={};a_.jumpSolution={};a_.result={};a_.prevJump=false;a_.jumped=false;a_.closest=99999;
-    a_.startAbs=now();a_.observationEnd=a_.startAbs+f("tc_observation");a_.lastSolve=-100;a_.status="READ THE SETUP";
-    auto car=gameWrapper->GetLocalCar();a_.initialTouchFrame=car.IsNull()?-1:car.GetLastBallTouchFrame();
+void TakeoffCoach::onUnload()
+{
+    gameWrapper->UnhookEvent("Function TAGame.Car_TA.SetVehicleInput");
 }
-void TakeoffCoach::stop(){auto id=++a_.id;a_=Attempt{};a_.id=id;a_.status="Stopped";}
 
-bool TakeoffCoach::makeScenario(Scenario& s){
-    float base=sample(range("tc_rotation_lo","tc_rotation_hi"))*D2R;
-    Vector fw=rot2({1,0,0},base), side{-fw.Y,fw.X,0};
-    float dist=sample(range("tc_distance_lo","tc_distance_hi")), lat=sample(range("tc_lateral_lo","tc_lateral_hi"));
-    Vector face=rot2(fw,sample(range("tc_facing_lo","tc_facing_hi"))*D2R);
-    Vector velDir=rot2(face,sample(range("tc_car_angle_lo","tc_car_angle_hi"))*D2R);
-    Vector ballDir=rot2(fw,sample(range("tc_ball_dir_lo","tc_ball_dir_hi"))*D2R);
-    s.carPos=fw*(-dist)+side*(-0.22f*lat);s.carPos.Z=17;
-    s.carVel=velDir*sample(range("tc_car_speed_lo","tc_car_speed_hi"));
-    s.ballPos=fw*200.f+side*lat;s.ballPos.Z=sample(range("tc_height_lo","tc_height_hi"));
-    s.ballVel=ballDir*sample(range("tc_ball_speed_lo","tc_ball_speed_hi"))+Vector{0,0,sample(range("tc_ball_up_lo","tc_ball_up_hi"))};
-    s.carRot={0,(int)(std::atan2(face.Y,face.X)*32768.f/PI),0};s.objective=chosenObjective();s.goalSign=i("tc_goal_sign")>=0?1:-1;
-    return safeScenario(s);
+void TakeoffCoach::registerCvars()
+{
+    auto reg = [this](const std::string& name, const std::string& value, float low, float high)
+    {
+        cvarManager->registerCvar(name, value, "", true, true, low, true, high);
+    };
+
+    reg("tc_objective", "2", 0.0f, 3.0f);
+    reg("tc_auto_reset", "1", 0.0f, 1.0f);
+    reg("tc_feedback_seconds", "2.5", 0.5f, 8.0f);
+
+    reg("tc_distance_min", "2600", 1200.0f, 6000.0f);
+    reg("tc_distance_max", "4300", 1200.0f, 6000.0f);
+    reg("tc_lateral_min", "-900", -2200.0f, 2200.0f);
+    reg("tc_lateral_max", "900", -2200.0f, 2200.0f);
+    reg("tc_ball_height_min", "220", 120.0f, 1400.0f);
+    reg("tc_ball_height_max", "700", 120.0f, 1400.0f);
+    reg("tc_setup_rotation_min", "-140", -180.0f, 180.0f);
+    reg("tc_setup_rotation_max", "140", -180.0f, 180.0f);
+    reg("tc_car_facing_min", "-15", -90.0f, 90.0f);
+    reg("tc_car_facing_max", "15", -90.0f, 90.0f);
+
+    reg("tc_car_speed_min", "700", 0.0f, 2300.0f);
+    reg("tc_car_speed_max", "1800", 0.0f, 2300.0f);
+    reg("tc_car_velocity_angle_min", "-10", -120.0f, 120.0f);
+    reg("tc_car_velocity_angle_max", "10", -120.0f, 120.0f);
+
+    reg("tc_ball_speed_min", "350", 0.0f, 2200.0f);
+    reg("tc_ball_speed_max", "1500", 0.0f, 2200.0f);
+    reg("tc_ball_vertical_min", "250", -500.0f, 1600.0f);
+    reg("tc_ball_vertical_max", "1000", -500.0f, 1600.0f);
+    reg("tc_ball_direction_min", "-180", -180.0f, 180.0f);
+    reg("tc_ball_direction_max", "180", -180.0f, 180.0f);
+
+    reg("tc_contact_min", "0.55", 0.25f, 1.5f);
+    reg("tc_contact_max", "2.35", 0.8f, 3.5f);
+    reg("tc_solver_hz", "20", 5.0f, 60.0f);
+    reg("tc_horizontal_calibration", "0.76", 0.4f, 1.2f);
+    reg("tc_vertical_calibration", "0.78", 0.4f, 1.2f);
+    reg("tc_position_tolerance", "150", 80.0f, 300.0f);
+    reg("tc_control_target", "700", 200.0f, 1600.0f);
+
+    reg("tc_show_hud", "1", 0.0f, 1.0f);
+    reg("tc_show_numbers", "1", 0.0f, 1.0f);
+    reg("tc_hud_position", "0", 0.0f, 2.0f);
+    reg("tc_hud_opacity", "0.88", 0.2f, 1.0f);
+    reg("tc_green_timing_ms", "55", 20.0f, 150.0f);
+    reg("tc_yellow_timing_ms", "180", 70.0f, 500.0f);
+    reg("tc_green_alignment", "4", 1.0f, 15.0f);
+    reg("tc_yellow_alignment", "11", 4.0f, 30.0f);
+
+    constexpr unsigned char permission = PERMISSION_FREEPLAY;
+
+    cvarManager->registerNotifier(
+        "tc_new",
+        [this](std::vector<std::string>) { requestNewScenario(); },
+        "Generate a new Takeoff Coach scenario",
+        permission);
+
+    cvarManager->registerNotifier(
+        "tc_stop",
+        [this](std::vector<std::string>)
+        {
+            ++attempt_.generation;
+            attempt_ = Attempt{};
+            attempt_.headline = "Drill stopped.";
+        },
+        "Stop Takeoff Coach",
+        permission);
 }
-bool TakeoffCoach::safeScenario(const Scenario& s)const{
-    if(std::abs(s.carPos.X)>SAFE_X||std::abs(s.carPos.Y)>SAFE_Y||std::abs(s.ballPos.X)>SAFE_X||std::abs(s.ballPos.Y)>SAFE_Y||s.ballPos.Z<FLOOR_Z||s.ballPos.Z>SAFE_Z)return false;
-    Vector p=s.ballPos,v=s.ballVel;float dt=1.f/60.f;
-    for(float t=0;t<f("tc_contact_hi");t+=dt){v.Z+=G*dt;p=p+v*dt;if(std::abs(p.X)>SAFE_X||std::abs(p.Y)>SAFE_Y||p.Z>SAFE_Z)return false;if(p.Z<FLOOR_Z)break;}
+
+void TakeoffCoach::requestNewScenario()
+{
+    const uint64_t generation = ++attempt_.generation;
+
+    gameWrapper->SetTimeout(
+        [this, generation](GameWrapper*)
+        {
+            startScenarioNow(generation);
+        },
+        0.05f);
+}
+
+void TakeoffCoach::startScenarioNow(uint64_t generation)
+{
+    if (generation != attempt_.generation)
+        return;
+
+    if (!gameWrapper->IsInFreeplay())
+    {
+        attempt_.phase = Phase::Idle;
+        attempt_.headline = "Enter Freeplay first.";
+        return;
+    }
+
+    Scenario scenario;
+    bool success = false;
+
+    for (int i = 0; i < 50 && !success; ++i)
+    {
+        success = generateScenario(scenario);
+    }
+
+    if (!success || !applyScenario(scenario))
+    {
+        attempt_.phase = Phase::Idle;
+        attempt_.headline = "Could not generate a safe scenario.";
+        return;
+    }
+
+    attempt_.phase = Phase::Reading;
+    attempt_.objective = scenario.objective;
+    attempt_.scenario = scenario;
+    attempt_.solution = Solution{};
+    attempt_.jumpSolution = Solution{};
+    attempt_.previousJump = false;
+    attempt_.touched = false;
+    attempt_.scored = false;
+    attempt_.startedAt = nowSeconds();
+    attempt_.jumpAt = 0.0f;
+    attempt_.feedbackUntil = 0.0f;
+    attempt_.lastSolveAt = -100.0f;
+    attempt_.closestDistance = 99999.0f;
+    attempt_.timingErrorMs = 0.0f;
+    attempt_.alignmentErrorDeg = 0.0f;
+    attempt_.headline = objectiveName(attempt_.objective) + " | READ";
+    attempt_.detail.clear();
+    attempt_.correction.clear();
+
+    auto server = gameWrapper->GetCurrentGameState();
+    if (!server.IsNull())
+    {
+        auto ball = server.GetBall();
+        if (!ball.IsNull())
+            attempt_.previousBallSpeed = length(ball.GetVelocity());
+    }
+}
+
+bool TakeoffCoach::generateScenario(Scenario& scenario)
+{
+    const float setupAngle = sample("tc_setup_rotation_min", "tc_setup_rotation_max") * DEG_TO_RAD;
+    const Vector forward = rotate2D(Vector{1.0f, 0.0f, 0.0f}, setupAngle);
+    const Vector side{-forward.Y, forward.X, 0.0f};
+
+    const float distance = sample("tc_distance_min", "tc_distance_max");
+    const float lateral = sample("tc_lateral_min", "tc_lateral_max");
+    const float ballHeight = sample("tc_ball_height_min", "tc_ball_height_max");
+
+    const float facingOffset = sample("tc_car_facing_min", "tc_car_facing_max") * DEG_TO_RAD;
+    const Vector facing = rotate2D(forward, facingOffset);
+
+    const float carSpeed = sample("tc_car_speed_min", "tc_car_speed_max");
+    const float carVelocityAngle = sample("tc_car_velocity_angle_min", "tc_car_velocity_angle_max") * DEG_TO_RAD;
+    const Vector carVelocityDirection = rotate2D(facing, carVelocityAngle);
+
+    const float ballSpeed = sample("tc_ball_speed_min", "tc_ball_speed_max");
+    const float ballVertical = sample("tc_ball_vertical_min", "tc_ball_vertical_max");
+    const float ballDirection = sample("tc_ball_direction_min", "tc_ball_direction_max") * DEG_TO_RAD;
+    const Vector ballHorizontalDirection = rotate2D(forward, ballDirection);
+
+    scenario.carPosition = forward * (-distance) + side * (-0.2f * lateral);
+    scenario.carPosition.Z = 17.0f;
+    scenario.carVelocity = carVelocityDirection * carSpeed;
+
+    scenario.ballPosition = forward * 200.0f + side * lateral;
+    scenario.ballPosition.Z = ballHeight;
+    scenario.ballVelocity = ballHorizontalDirection * ballSpeed + Vector{0.0f, 0.0f, ballVertical};
+
+    scenario.carRotation = Rotator{
+        0,
+        static_cast<int>(std::atan2(facing.Y, facing.X) * 32768.0f / PI),
+        0};
+
+    scenario.objective = chooseObjective();
+    scenario.goalSign = scenario.ballPosition.Y >= 0.0f ? 1 : -1;
+
+    return isScenarioSafe(scenario);
+}
+
+bool TakeoffCoach::isScenarioSafe(Scenario scenario) const
+{
+    if (std::abs(scenario.carPosition.X) > SAFE_X || std::abs(scenario.carPosition.Y) > SAFE_Y)
+        return false;
+
+    if (std::abs(scenario.ballPosition.X) > SAFE_X || std::abs(scenario.ballPosition.Y) > SAFE_Y)
+        return false;
+
+    if (scenario.ballPosition.Z < SAFE_FLOOR || scenario.ballPosition.Z > SAFE_CEILING)
+        return false;
+
+    Vector position = scenario.ballPosition;
+    Vector velocity = scenario.ballVelocity;
+
+    for (float t = 0.0f; t < getFloat("tc_contact_max"); t += 1.0f / 60.0f)
+    {
+        velocity.Z += GRAVITY_Z / 60.0f;
+        position = position + velocity * (1.0f / 60.0f);
+
+        if (std::abs(position.X) > SAFE_X
+            || std::abs(position.Y) > SAFE_Y
+            || position.Z > SAFE_CEILING)
+        {
+            return false;
+        }
+
+        if (position.Z < SAFE_FLOOR)
+            break;
+    }
+
     return true;
 }
-bool TakeoffCoach::applyScenario(const Scenario& s){
-    auto server=gameWrapper->GetCurrentGameState();auto car=gameWrapper->GetLocalCar();if(server.IsNull()||car.IsNull())return false;auto ball=server.GetBall();if(ball.IsNull())return false;
-    car.SetLocation(s.carPos);car.SetRotation(s.carRot);car.SetVelocity(s.carVel);car.SetAngularVelocity({0,0,0},false);ball.SetLocation(s.ballPos);ball.SetVelocity(s.ballVel);return true;
+
+bool TakeoffCoach::applyScenario(Scenario scenario)
+{
+    auto server = gameWrapper->GetCurrentGameState();
+    auto car = gameWrapper->GetLocalCar();
+
+    if (server.IsNull() || car.IsNull())
+        return false;
+
+    auto ball = server.GetBall();
+    if (ball.IsNull())
+        return false;
+
+    car.SetLocation(scenario.carPosition);
+    car.SetRotation(scenario.carRotation);
+    car.SetVelocity(scenario.carVelocity);
+    car.SetAngularVelocity(Vector{0.0f, 0.0f, 0.0f}, false);
+
+    ball.SetLocation(scenario.ballPosition);
+    ball.SetVelocity(scenario.ballVelocity);
+
+    return true;
 }
 
-void TakeoffCoach::onInput(CarWrapper car,void* params,std::string){
-    if(!params||!gameWrapper->IsInFreeplay())return;auto local=gameWrapper->GetLocalCar();if(local.IsNull()||car.memory_address!=local.memory_address)return;
-    float t=now();update(car,t);auto* in=(ControllerInput*)params;bool jump=in->Jump!=0;if(jump&&!a_.prevJump&&a_.phase==Phase::Ground)recordJump(car,t);a_.prevJump=jump;
-}
-void TakeoffCoach::update(CarWrapper car,float t){
-    if(a_.phase==Phase::Idle||a_.phase==Phase::ResetPending)return;auto server=gameWrapper->GetCurrentGameState();if(server.IsNull())return;auto ball=server.GetBall();if(ball.IsNull())return;
-    if(a_.phase==Phase::Observation){if(t>=a_.observationEnd){a_.phase=Phase::Ground;a_.status="SOLVING";}else a_.status=objectiveName(a_.objective)+" | READ";return;}
-    if(a_.phase==Phase::Ground)updateGround(car,ball,t);else if(a_.phase==Phase::Airborne)updateAir(car,ball,t);else if(a_.phase==Phase::Feedback&&t>=a_.feedbackEnd)scheduleReset();
-}
-void TakeoffCoach::updateGround(CarWrapper car,BallWrapper ball,float t){
-    if(t-a_.lastSolve>=1.f/std::max(5.f,f("tc_solver_hz"))){a_.solution=solve(car,ball,t);a_.lastSolve=t;}
-    if(!a_.solution.valid){a_.status="NO SAFE INTERCEPT";return;}
-    float g=f("tc_green_ms")/1000.f;a_.status=a_.solution.jumpDelay>g?"WAIT":(a_.solution.jumpDelay>=-g?"JUMP NOW":"LATE");a_.closest=std::min(a_.closest,len(ball.GetLocation()-car.GetLocation()));
-}
-void TakeoffCoach::updateAir(CarWrapper car,BallWrapper ball,float t){
-    a_.closest=std::min(a_.closest,len(ball.GetLocation()-car.GetLocation()));bool touched=car.GetLastBallTouchFrame()!=a_.initialTouchFrame&&car.GetLastBallTouchFrame()>=0;
-    auto server=gameWrapper->GetCurrentGameState();bool scored=!server.IsNull()&&server.IsInGoal(ball.GetLocation());if(touched||scored){finish(true,scored,car,ball,t);return;}
-    float end=a_.jumpSolution.valid?a_.jumpSolution.idealAbs+a_.jumpSolution.aerialDuration+0.8f:a_.jumpAbs+2.8f;if(t>end||(car.IsOnGround()&&t-a_.jumpAbs>0.4f))finish(false,false,car,ball,t);
-}
-void TakeoffCoach::recordJump(CarWrapper,float t){a_.jumped=true;a_.jumpAbs=t;a_.jumpSolution=a_.solution;a_.phase=Phase::Airborne;a_.result.timingMs=a_.jumpSolution.valid?(t-a_.jumpSolution.idealAbs)*1000.f:9999;a_.result.alignDeg=a_.solution.alignDeg;a_.status="TRACKING";}
-void TakeoffCoach::finish(bool touched,bool scored,CarWrapper car,BallWrapper ball,float t){
-    if(a_.phase==Phase::Feedback||a_.phase==Phase::ResetPending)return;a_.result.touched=touched;a_.result.scored=scored;a_.result.closest=a_.closest;a_.result.carSpeed=len(car.GetVelocity());a_.result.relSpeed=len(car.GetVelocity()-ball.GetVelocity());
-    float e=a_.result.timingMs,g=f("tc_green_ms"),al=std::abs(a_.result.alignDeg);
-    if(!a_.jumped){a_.result.title="NO TAKEOFF";a_.result.correction="Jump before the intercept becomes unreachable.";}
-    else if(e<-g){a_.result.title="EARLY BY "+n0(-e)+" ms";a_.result.correction="Stay grounded "+n0(-e)+" ms longer.";}
-    else if(e>g){a_.result.title="LATE BY "+n0(e)+" ms";a_.result.correction="Start the fast aerial "+n0(e)+" ms earlier.";}
-    else if(al>f("tc_green_align")){a_.result.title="TIMING GOOD, AIM OFF";a_.result.correction="Correct ground direction by "+n1(al)+" degrees.";}
-    else if(!touched){a_.result.title="GOOD TAKEOFF, MISSED";a_.result.correction="Takeoff was usable; refine the aerial after leaving the ground.";}
-    else if(a_.objective==Objective::Score){a_.result.title=scored?"GOAL":"TOUCH, NO GOAL";a_.result.correction=scored?"Requested shot completed.":"Reach was good; contact farther behind the ball.";}
-    else if(a_.objective==Objective::Fast){a_.result.title="FAST TOUCH COMPLETE";a_.result.correction="Car speed at contact: "+n0(a_.result.carSpeed)+" uu/s.";}
-    else {float target=f("tc_control_target");a_.result.title=a_.result.relSpeed<=target?"CONTROL TOUCH COMPLETE":"TOUCH TOO HARD";a_.result.correction="Relative contact speed: "+n0(a_.result.relSpeed)+" uu/s.";}
-    std::ostringstream o;o<<"Timing ";if(a_.jumped&&std::abs(e)<9000)o<<(e>=0?"+":"")<<n0(e)<<" ms";else o<<"n/a";o<<" | Aim "<<n1(a_.result.alignDeg)<<" deg | Closest "<<n0(a_.result.closest)<<" uu";a_.result.detail=o.str();a_.status=a_.result.title;a_.phase=Phase::Feedback;a_.feedbackEnd=t+f("tc_feedback_time");
-}
-void TakeoffCoach::scheduleReset(){if(!b("tc_auto_reset")){a_.phase=Phase::Idle;a_.status="Press New Scenario";return;}a_.phase=Phase::ResetPending;auto id=++a_.id;gameWrapper->SetTimeout([this,id](GameWrapper*){startNow(id);},0.1f);}
+void TakeoffCoach::onVehicleInput(CarWrapper car, void* params, std::string)
+{
+    if (params == nullptr || !gameWrapper->IsInFreeplay())
+        return;
 
-std::vector<TakeoffCoach::BallSlice> TakeoffCoach::predict(const BallWrapper& ball)const{
-    std::vector<BallSlice> out;Vector p=ball.GetLocation(),v=ball.GetVelocity();float dt=1.f/120.f;
-    for(float t=0;t<=f("tc_contact_hi");t+=dt){if(t>=f("tc_contact_lo"))out.push_back({t,p,v});v.Z+=G*dt;p=p+v*dt;if(p.Z<FLOOR_Z||p.Z>SAFE_Z||std::abs(p.X)>SAFE_X||std::abs(p.Y)>SAFE_Y)break;}return out;
+    auto localCar = gameWrapper->GetLocalCar();
+    if (localCar.IsNull() || car.memory_address != localCar.memory_address)
+        return;
+
+    const float now = nowSeconds();
+    updateAttempt(car, now);
+
+    auto* input = static_cast<ControllerInput*>(params);
+    const bool jumpPressed = input->Jump != 0;
+
+    if (jumpPressed && !attempt_.previousJump && attempt_.phase == Phase::Reading)
+    {
+        attempt_.jumpAt = now;
+        attempt_.jumpSolution = attempt_.solution;
+        attempt_.phase = Phase::Airborne;
+
+        if (attempt_.jumpSolution.valid)
+        {
+            attempt_.timingErrorMs =
+                (now - attempt_.jumpSolution.idealJumpAbsolute) * 1000.0f;
+            attempt_.alignmentErrorDeg = attempt_.jumpSolution.alignmentErrorDeg;
+        }
+        else
+        {
+            attempt_.timingErrorMs = 9999.0f;
+            attempt_.alignmentErrorDeg = 9999.0f;
+        }
+
+        attempt_.headline = "TRACKING AERIAL";
+    }
+
+    attempt_.previousJump = jumpPressed;
 }
-TakeoffCoach::Solution TakeoffCoach::solve(const CarWrapper& car,const BallWrapper& ball,float t)const{
-    Solution best;float bestScore=-1e30f;auto path=predict(ball);Vector travel=len2(car.GetVelocity())>80?norm2(car.GetVelocity()):norm2(forward(car.GetRotation()));
-    for(size_t k=0;k<path.size();k+=3){float dur,conf,cs,rs;Vector target,dir;if(!estimate(car,path[k],a_.objective,dur,conf,target,dir,cs,rs))continue;float delay=path[k].t-dur;if(delay<-0.28f)continue;float align=angle2(travel,dir);float score=delay*1000+conf*220-std::abs(align)*12;
-        if(a_.objective==Objective::Fast)score+=cs*0.20f;else if(a_.objective==Objective::Control)score-=std::abs(rs-f("tc_control_target"))*0.18f;else if(a_.objective==Objective::Score){Vector goal{0,(float)a_.scenario.goalSign*5120,320};score+=(norm2(goal-path[k].pos).X*dir.X+norm2(goal-path[k].pos).Y*dir.Y)*350;}
-        if(score>bestScore){bestScore=score;best.valid=true;best.jumpDelay=delay;best.idealAbs=t+delay;best.contactDelay=path[k].t;best.aerialDuration=dur;best.confidence=conf;best.alignDeg=align;best.predCarSpeed=cs;best.predRelSpeed=rs;best.contactBall=path[k].pos;best.contactCar=target;best.requiredDir=dir;}}
+
+void TakeoffCoach::updateAttempt(CarWrapper car, float now)
+{
+    if (attempt_.phase == Phase::Idle)
+        return;
+
+    auto server = gameWrapper->GetCurrentGameState();
+    if (server.IsNull())
+        return;
+
+    auto ball = server.GetBall();
+    if (ball.IsNull())
+        return;
+
+    if (attempt_.phase == Phase::Reading)
+        updateReading(car, ball, now);
+    else if (attempt_.phase == Phase::Airborne)
+        updateAirborne(car, ball, now);
+    else if (attempt_.phase == Phase::Feedback && now >= attempt_.feedbackUntil)
+    {
+        if (getBool("tc_auto_reset"))
+            requestNewScenario();
+        else
+            attempt_.phase = Phase::Idle;
+    }
+}
+
+void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
+{
+    const float hz = std::max(5.0f, getFloat("tc_solver_hz"));
+
+    if (now - attempt_.lastSolveAt >= 1.0f / hz)
+    {
+        attempt_.solution = solve(car, ball, now);
+        attempt_.lastSolveAt = now;
+    }
+
+    const float distanceNow = length(ball.GetLocation() - car.GetLocation());
+    attempt_.closestDistance = std::min(attempt_.closestDistance, distanceNow);
+
+    if (!attempt_.solution.valid)
+    {
+        attempt_.headline = objectiveName(attempt_.objective) + " | NO SAFE INTERCEPT";
+        return;
+    }
+
+    const float green = getFloat("tc_green_timing_ms") / 1000.0f;
+
+    if (attempt_.solution.jumpDelay > green)
+        attempt_.headline = objectiveName(attempt_.objective) + " | WAIT";
+    else if (attempt_.solution.jumpDelay >= -green)
+        attempt_.headline = objectiveName(attempt_.objective) + " | JUMP NOW";
+    else
+        attempt_.headline = objectiveName(attempt_.objective) + " | LATE";
+}
+
+void TakeoffCoach::updateAirborne(CarWrapper car, BallWrapper ball, float now)
+{
+    const Vector carPosition = car.GetLocation();
+    const Vector ballPosition = ball.GetLocation();
+    const float distanceNow = length(ballPosition - carPosition);
+    attempt_.closestDistance = std::min(attempt_.closestDistance, distanceNow);
+
+    const float ballSpeed = length(ball.GetVelocity());
+    const bool nearBall = distanceNow < 220.0f;
+    const bool ballChanged = std::abs(ballSpeed - attempt_.previousBallSpeed) > 120.0f;
+    attempt_.previousBallSpeed = ballSpeed;
+
+    const bool touched = nearBall && ballChanged;
+    const bool scored =
+        std::abs(ballPosition.Y) > 5120.0f
+        && std::abs(ballPosition.X) < 900.0f
+        && ballPosition.Z < 650.0f;
+
+    if (touched || scored)
+    {
+        finishAttempt(car, ball, true, scored, now);
+        return;
+    }
+
+    const float deadline =
+        attempt_.jumpSolution.valid
+        ? attempt_.jumpSolution.idealJumpAbsolute + attempt_.jumpSolution.contactDelay + 0.8f
+        : attempt_.jumpAt + 2.8f;
+
+    if (now > deadline)
+        finishAttempt(car, ball, false, false, now);
+}
+
+void TakeoffCoach::finishAttempt(
+    CarWrapper car,
+    BallWrapper ball,
+    bool touched,
+    bool scored,
+    float now)
+{
+    attempt_.touched = touched;
+    attempt_.scored = scored;
+    attempt_.phase = Phase::Feedback;
+    attempt_.feedbackUntil = now + getFloat("tc_feedback_seconds");
+
+    const float timing = attempt_.timingErrorMs;
+    const float greenTiming = getFloat("tc_green_timing_ms");
+    const float greenAlignment = getFloat("tc_green_alignment");
+    const float alignment = std::abs(attempt_.alignmentErrorDeg);
+
+    if (timing < -greenTiming)
+    {
+        attempt_.headline = "EARLY BY " + format0(-timing) + " ms";
+        attempt_.correction = "Stay grounded longer before the first jump.";
+    }
+    else if (timing > greenTiming && timing < 9000.0f)
+    {
+        attempt_.headline = "LATE BY " + format0(timing) + " ms";
+        attempt_.correction = "Start the fast aerial earlier.";
+    }
+    else if (alignment > greenAlignment && alignment < 9000.0f)
+    {
+        attempt_.headline = "TIMING GOOD, ALIGNMENT OFF";
+        attempt_.correction =
+            "Correct the takeoff direction by about "
+            + format1(alignment)
+            + " degrees.";
+    }
+    else if (!touched)
+    {
+        attempt_.headline = "GOOD TAKEOFF, MISSED BALL";
+        attempt_.correction = "The takeoff was usable; refine the aerial after jumping.";
+    }
+    else if (attempt_.objective == Objective::Score)
+    {
+        attempt_.headline = scored ? "GOAL" : "TOUCH, NO GOAL";
+        attempt_.correction =
+            scored ? "Good timing and contact side."
+                   : "Contact farther behind the ball toward goal.";
+    }
+    else if (attempt_.objective == Objective::Fast)
+    {
+        attempt_.headline = "FAST TOUCH COMPLETE";
+        attempt_.correction =
+            "Car speed at contact: "
+            + format0(length(car.GetVelocity()))
+            + " uu/s.";
+    }
+    else
+    {
+        const float relativeSpeed = length(car.GetVelocity() - ball.GetVelocity());
+        attempt_.headline =
+            relativeSpeed <= getFloat("tc_control_target")
+            ? "CONTROL TOUCH COMPLETE"
+            : "TOUCH TOO HARD";
+
+        attempt_.correction =
+            "Relative contact speed: "
+            + format0(relativeSpeed)
+            + " uu/s.";
+    }
+
+    std::ostringstream detail;
+    detail << "Timing ";
+
+    if (timing < 9000.0f)
+        detail << (timing >= 0.0f ? "+" : "") << format0(timing) << " ms";
+    else
+        detail << "n/a";
+
+    detail << " | Aim ";
+    if (alignment < 9000.0f)
+        detail << format1(attempt_.alignmentErrorDeg) << " deg";
+    else
+        detail << "n/a";
+
+    detail << " | Closest " << format0(attempt_.closestDistance) << " uu";
+    attempt_.detail = detail.str();
+}
+
+TakeoffCoach::Solution TakeoffCoach::solve(
+    CarWrapper car,
+    BallWrapper ball,
+    float now) const
+{
+    Solution best;
+    const Vector carPosition = car.GetLocation();
+    const Vector carVelocity = car.GetVelocity();
+    const Vector ballPosition = ball.GetLocation();
+    const Vector ballVelocity = ball.GetVelocity();
+
+    const float carSpeed = length2D(carVelocity);
+    const Vector travelDirection =
+        carSpeed > 80.0f
+        ? normalized2D(carVelocity)
+        : normalized2D(forwardFromRotator(car.GetRotation()));
+
+    const float minContact = getFloat("tc_contact_min");
+    const float maxContact = getFloat("tc_contact_max");
+    const float horizontalCalibration = getFloat("tc_horizontal_calibration");
+    const float verticalCalibration = getFloat("tc_vertical_calibration");
+    const float tolerance = getFloat("tc_position_tolerance");
+
+    float bestScore = -1.0e9f;
+
+    for (float contactDelay = minContact;
+         contactDelay <= maxContact;
+         contactDelay += 0.025f)
+    {
+        const Vector predictedBall =
+            predictBallPosition(ballPosition, ballVelocity, contactDelay);
+
+        if (predictedBall.Z < SAFE_FLOOR
+            || predictedBall.Z > SAFE_CEILING
+            || std::abs(predictedBall.X) > SAFE_X
+            || std::abs(predictedBall.Y) > SAFE_Y)
+        {
+            continue;
+        }
+
+        Vector desiredOutgoing;
+
+        if (attempt_.objective == Objective::Score)
+        {
+            const Vector goal{
+                0.0f,
+                static_cast<float>(attempt_.scenario.goalSign) * 5120.0f,
+                300.0f};
+            desiredOutgoing = normalized2D(goal - predictedBall);
+        }
+        else if (attempt_.objective == Objective::Control)
+        {
+            desiredOutgoing =
+                length2D(ballVelocity) > 80.0f
+                ? normalized2D(ballVelocity)
+                : normalized2D(predictedBall - carPosition);
+        }
+        else
+        {
+            desiredOutgoing = normalized2D(predictedBall - carPosition);
+        }
+
+        const float behind =
+            attempt_.objective == Objective::Control ? 125.0f : 150.0f;
+
+        const Vector targetCar =
+            predictedBall
+            - desiredOutgoing * behind
+            - Vector{0.0f, 0.0f, 45.0f};
+
+        const Vector delta = targetCar - carPosition;
+        const float horizontalNeed = length2D(delta);
+        const float verticalNeed = std::max(0.0f, delta.Z);
+
+        float requiredDuration = -1.0f;
+        float confidence = 0.0f;
+
+        for (float duration = 0.34f;
+             duration <= std::min(2.0f, contactDelay + 0.2f);
+             duration += 1.0f / 120.0f)
+        {
+            const float horizontalReach =
+                carSpeed * duration
+                + 0.5f * BOOST_ACCEL * horizontalCalibration * duration * duration
+                + tolerance;
+
+            const float secondJumpTime = std::max(0.0f, duration - 0.14f);
+            const float verticalReach =
+                FIRST_JUMP * duration
+                + SECOND_JUMP * secondJumpTime
+                + 0.5f
+                    * (BOOST_ACCEL * verticalCalibration + GRAVITY_Z)
+                    * duration
+                    * duration
+                + tolerance;
+
+            if (horizontalReach >= horizontalNeed && verticalReach >= verticalNeed)
+            {
+                requiredDuration = duration;
+
+                const float horizontalMargin =
+                    (horizontalReach - horizontalNeed) / std::max(1.0f, tolerance);
+
+                const float verticalMargin =
+                    (verticalReach - verticalNeed) / std::max(1.0f, tolerance);
+
+                confidence = clamp(
+                    std::min(horizontalMargin, verticalMargin),
+                    0.0f,
+                    1.0f);
+
+                break;
+            }
+        }
+
+        if (requiredDuration < 0.0f)
+            continue;
+
+        const float jumpDelay = contactDelay - requiredDuration;
+        const Vector requiredDirection = normalized2D(delta);
+        const float alignment =
+            signedAngleDeg2D(travelDirection, requiredDirection);
+
+        float score = jumpDelay * 1000.0f + confidence * 180.0f;
+
+        if (attempt_.objective == Objective::Fast)
+            score += carSpeed * 0.15f;
+        else if (attempt_.objective == Objective::Control)
+            score -= std::abs(carSpeed - length2D(ballVelocity)) * 0.08f;
+        else if (attempt_.objective == Objective::Score)
+            score += 100.0f;
+
+        score -= std::abs(alignment) * 10.0f;
+
+        if (score > bestScore)
+        {
+            bestScore = score;
+            best.valid = true;
+            best.jumpDelay = jumpDelay;
+            best.idealJumpAbsolute = now + jumpDelay;
+            best.contactDelay = contactDelay;
+            best.confidence = confidence;
+            best.alignmentErrorDeg = alignment;
+            best.contactPoint = predictedBall;
+            best.requiredDirection = requiredDirection;
+        }
+    }
+
     return best;
 }
-bool TakeoffCoach::estimate(const CarWrapper& car,const BallSlice& sl,Objective objective,float& duration,float& confidence,Vector& targetCar,Vector& requiredDir,float& carSpeed,float& relSpeed)const{
-    Vector cp=car.GetLocation(),cv=car.GetVelocity(),out;
-    if(objective==Objective::Score)out=norm(Vector{0,(float)a_.scenario.goalSign*5120,320}-sl.pos);else if(objective==Objective::Control)out=len2(sl.vel)>80?norm2(sl.vel):norm2(sl.pos-cp);else out=norm(sl.pos-cp);
-    targetCar=sl.pos-out*(objective==Objective::Control?125.f:150.f)-Vector{0,0,objective==Objective::Fast?55.f:35.f};Vector d=targetCar-cp;requiredDir=norm2(d);float h=len2(d),z=std::max(0.f,d.Z),speed=len2(cv),tol=f("tc_pos_tolerance"),count=0,first=0;bool found=false;
-    for(float x=.34f;x<=std::min(2.f,sl.t+.25f);x+=1.f/120.f){float hr=speed*x+.5f*BOOST*f("tc_horiz_cal")*x*x+tol;float sj=std::max(0.f,x-.14f);float vr=JUMP*x+JUMP*sj+.5f*(BOOST*f("tc_vert_cal")+G)*x*x+tol;bool ok=hr>=h&&vr>=z;if(ok){if(!found){found=true;first=x;}count++;if(count>=1+f("tc_strictness")*5)break;}else if(found)break;}
-    if(!found)return false;duration=first;confidence=clamp(count/6.f,0,1);carSpeed=std::min(2300.f,speed+BOOST*f("tc_horiz_cal")*first);relSpeed=std::abs(carSpeed-len2(sl.vel));return true;
+
+Vector TakeoffCoach::predictBallPosition(
+    Vector position,
+    Vector velocity,
+    float t) const
+{
+    return Vector{
+        position.X + velocity.X * t,
+        position.Y + velocity.Y * t,
+        position.Z + velocity.Z * t + 0.5f * GRAVITY_Z * t * t};
 }
 
-void TakeoffCoach::draw(CanvasWrapper c){
-    if(!b("tc_show_hud")||!gameWrapper->IsInFreeplay())return;int pos=i("tc_hud_position"),alpha=(int)(255*f("tc_hud_opacity"));Vector2 size=c.GetSize(),origin=pos==1?Vector2{24,150}:pos==2?Vector2{size.X-430,150}:Vector2{size.X/2-430,28};col(c,0,0,0,alpha);c.SetPosition(origin);c.FillBox({860,135});col(c,255,255,255,255);c.SetPosition({origin.X+15,origin.Y+10});c.DrawString(objectiveName(a_.objective)+" | "+a_.status,1.35f*f("tc_hud_scale"),1.35f*f("tc_hud_scale"),true);
-    if(a_.phase==Phase::Feedback){c.SetPosition({origin.X+15,origin.Y+47});c.DrawString(a_.result.detail,.95f,.95f,true);c.SetPosition({origin.X+15,origin.Y+77});c.DrawString(a_.result.correction,1,1,true);}else{int idx=0;if(b("tc_show_timing")){float v=a_.solution.valid?clamp((-a_.solution.jumpDelay*1000.f)/std::max(f("tc_yellow_early_ms"),f("tc_yellow_late_ms")),-1,1):0;drawGauge(c,"TIMING",a_.solution.valid?n0(-a_.solution.jumpDelay*1000)+" ms":"none",v,idx++,true);}if(b("tc_show_alignment")){float er=a_.solution.valid?a_.solution.alignDeg:99;drawGauge(c,"ALIGN",n1(er)+" deg",clamp(er/f("tc_yellow_align"),-1,1),idx++,true);}if(b("tc_show_reach")){float q=a_.solution.valid?a_.solution.confidence:0;drawGauge(c,"REACH",n0(q*100)+"%",q,idx++,false);}}drawMarkers(c);col(c,255,255,255,255);
-}
-void TakeoffCoach::drawGauge(CanvasWrapper& c,const std::string& label,const std::string& value,float v,int idx,bool centered){
-    int pos=i("tc_hud_position");Vector2 sz=c.GetSize(),base=pos==1?Vector2{39,205+idx*62}:pos==2?Vector2{sz.X-415,205+idx*62}:Vector2{sz.X/2-415+idx*275,80};int h=18;
-    if(centered){col(c,200,55,55,230);c.SetPosition(base);c.FillBox({50,h});col(c,235,175,45,230);c.SetPosition({base.X+50,base.Y});c.FillBox({55,h});col(c,55,195,95,240);c.SetPosition({base.X+105,base.Y});c.FillBox({40,h});col(c,235,175,45,230);c.SetPosition({base.X+145,base.Y});c.FillBox({55,h});col(c,200,55,55,230);c.SetPosition({base.X+200,base.Y});c.FillBox({50,h});}
-    else{col(c,200,55,55,230);c.SetPosition(base);c.FillBox({83,h});col(c,235,175,45,230);c.SetPosition({base.X+83,base.Y});c.FillBox({84,h});col(c,55,195,95,240);c.SetPosition({base.X+167,base.Y});c.FillBox({83,h});}
-    float m=centered?(v+1)*.5f:v;m=clamp(m,0,1);int x=base.X+(int)(250*m);col(c,255,255,255,255);c.FillTriangle({x,base.Y-7},{x-6,base.Y-1},{x+6,base.Y-1});c.SetPosition({base.X,base.Y+21});c.DrawString(label+(b("tc_show_numbers")?"  "+value:""),.88f,.88f,true);
-}
-void TakeoffCoach::drawMarkers(CanvasWrapper& c){if(!a_.solution.valid||a_.phase==Phase::Feedback)return;if(b("tc_show_contact")){Vector2 p=c.Project(a_.solution.contactBall);col(c,255,255,255,230);c.DrawRect({p.X-9,p.Y-9},{p.X+9,p.Y+9});}if(b("tc_show_direction")){auto car=gameWrapper->GetLocalCar();if(!car.IsNull()){Vector s=car.GetLocation()+Vector{0,0,60},e=s+a_.solution.requiredDir*650;col(c,255,255,255,220);c.DrawLine(c.Project(s),c.Project(e),3);}}}
-void TakeoffCoach::RenderSettings(){if(ImGui::BeginTabBar("tc_tabs")){if(ImGui::BeginTabItem("Drill")){drillTab();ImGui::EndTabItem();}if(ImGui::BeginTabItem("Setup")){setupTab();ImGui::EndTabItem();}if(ImGui::BeginTabItem("Solver")){solverTab();ImGui::EndTabItem();}if(ImGui::BeginTabItem("Feedback")){feedbackTab();ImGui::EndTabItem();}ImGui::EndTabBar();}}
-void TakeoffCoach::drillTab(){
-    ImGui::TextWrapped("Searches for a late robust takeoff. Negative timing is early; positive timing is late.");int o=i("tc_objective");const char* names[]={"Fast Touch","Control Touch","Random Call","Score"};if(ImGui::Combo("Objective",&o,names,4))set("tc_objective",o);
-    if(ImGui::Button("Start / New Scenario"))cvarManager->executeCommand("tc_new");ImGui::SameLine();if(ImGui::Button("Stop"))cvarManager->executeCommand("tc_stop");bool ar=b("tc_auto_reset");if(ImGui::Checkbox("Auto next attempt",&ar))set("tc_auto_reset",ar);
-    float ob=f("tc_observation");if(ImGui::SliderFloat("Observation delay",&ob,0,3,"%.2f s"))set("tc_observation",ob);float ft=f("tc_feedback_time");if(ImGui::SliderFloat("Result duration",&ft,.5f,10,"%.1f s"))set("tc_feedback_time",ft);
-    int gs=i("tc_goal_sign");if(ImGui::RadioButton("Score toward +Y",gs>=0))set("tc_goal_sign",1);ImGui::SameLine();if(ImGui::RadioButton("Score toward -Y",gs<0))set("tc_goal_sign",-1);
-}
-void TakeoffCoach::setupTab(){
-    ImGui::TextWrapped("Each pair is a random range. Equal handles make a fixed value. Ball direction: 0 away, +/-90 crossing, +/-180 toward.");
-    if(ImGui::BeginTable("setup",2,ImGuiTableFlags_BordersInnerV)){ImGui::TableNextColumn();ImGui::Text("POSITION");rangeUi("Approach distance","tc_distance_lo","tc_distance_hi",1500,6000,"%.0f uu");rangeUi("Lateral offset","tc_lateral_lo","tc_lateral_hi",-2200,2200,"%.0f uu");rangeUi("Ball height","tc_height_lo","tc_height_hi",120,1500,"%.0f uu");rangeUi("Setup rotation","tc_rotation_lo","tc_rotation_hi",-180,180,"%.0f deg");rangeUi("Car facing offset","tc_facing_lo","tc_facing_hi",-90,90,"%.0f deg");
-        ImGui::Separator();ImGui::Text("MOTION");rangeUi("Car speed","tc_car_speed_lo","tc_car_speed_hi",0,2300,"%.0f uu/s");rangeUi("Car velocity angle","tc_car_angle_lo","tc_car_angle_hi",-120,120,"%.0f deg");rangeUi("Ball horizontal speed","tc_ball_speed_lo","tc_ball_speed_hi",0,2200,"%.0f uu/s");rangeUi("Ball vertical speed","tc_ball_up_lo","tc_ball_up_hi",-500,1600,"%.0f uu/s");rangeUi("Ball travel direction","tc_ball_dir_lo","tc_ball_dir_hi",-180,180,"%.0f deg");ImGui::EndTable();}
-}
-void TakeoffCoach::solverTab(){float x=f("tc_contact_lo");if(ImGui::SliderFloat("Minimum contact horizon",&x,.35f,2,"%.2f s"))set("tc_contact_lo",x);x=f("tc_contact_hi");if(ImGui::SliderFloat("Maximum contact horizon",&x,.8f,4,"%.2f s"))set("tc_contact_hi",x);x=f("tc_strictness");if(ImGui::SliderFloat("Timing strictness",&x,0,1,"%.2f"))set("tc_strictness",x);x=f("tc_pos_tolerance");if(ImGui::SliderFloat("Position tolerance",&x,80,300,"%.0f uu"))set("tc_pos_tolerance",x);x=f("tc_solver_hz");if(ImGui::SliderFloat("Solver refresh",&x,5,60,"%.0f Hz"))set("tc_solver_hz",x);if(ImGui::CollapsingHeader("Advanced calibration")){x=f("tc_horiz_cal");if(ImGui::SliderFloat("Horizontal reach",&x,.4f,1.2f,"%.2f"))set("tc_horiz_cal",x);x=f("tc_vert_cal");if(ImGui::SliderFloat("Vertical reach",&x,.4f,1.2f,"%.2f"))set("tc_vert_cal",x);x=f("tc_control_target");if(ImGui::SliderFloat("Control relative-speed target",&x,200,1600,"%.0f uu/s"))set("tc_control_target",x);}ImGui::TextWrapped("Pre-bounce only: scenarios that hit a floor, wall, corner, or ceiling before the intercept are rejected.");}
-void TakeoffCoach::feedbackTab(){
-    auto ck=[this](const char* label,const char* name){bool v=b(name);if(ImGui::Checkbox(label,&v))set(name,v);};ck("Show HUD","tc_show_hud");ck("Timing gauge","tc_show_timing");ck("Alignment gauge","tc_show_alignment");ck("Reachability gauge","tc_show_reach");ck("Show numbers","tc_show_numbers");ck("Contact marker","tc_show_contact");ck("Ground direction line","tc_show_direction");
-    int p=i("tc_hud_position");const char* ps[]={"Top","Left","Right"};if(ImGui::Combo("HUD placement",&p,ps,3))set("tc_hud_position",p);float x=f("tc_hud_scale");if(ImGui::SliderFloat("HUD scale",&x,.65f,1.6f,"%.2f"))set("tc_hud_scale",x);x=f("tc_hud_opacity");if(ImGui::SliderFloat("Panel opacity",&x,.25f,1,"%.2f"))set("tc_hud_opacity",x);ImGui::Separator();x=f("tc_green_ms");if(ImGui::SliderFloat("Green timing window",&x,20,160,"%.0f ms"))set("tc_green_ms",x);x=f("tc_yellow_early_ms");if(ImGui::SliderFloat("Yellow early limit",&x,70,500,"%.0f ms"))set("tc_yellow_early_ms",x);x=f("tc_yellow_late_ms");if(ImGui::SliderFloat("Yellow late limit",&x,50,400,"%.0f ms"))set("tc_yellow_late_ms",x);x=f("tc_green_align");if(ImGui::SliderFloat("Green alignment",&x,1,15,"%.1f deg"))set("tc_green_align",x);x=f("tc_yellow_align");if(ImGui::SliderFloat("Yellow alignment",&x,4,30,"%.1f deg"))set("tc_yellow_align",x);
-}
-bool TakeoffCoach::rangeUi(const char* label,const std::string& lo,const std::string& hi,float mn,float mx,const char* fmt){float a=f(lo),d=f(hi);bool ch=ImGui::DragFloatRange2(label,&a,&d,(mx-mn)/500.f,mn,mx,fmt,fmt);if(ch){if(a>d)std::swap(a,d);set(lo,a);set(hi,d);}return ch;}
+void TakeoffCoach::renderHud(CanvasWrapper canvas)
+{
+    if (!getBool("tc_show_hud") || !gameWrapper->IsInFreeplay())
+        return;
 
-std::string TakeoffCoach::GetPluginName(){return "Takeoff Coach";}void TakeoffCoach::SetImGuiContext(uintptr_t c){ImGui::SetCurrentContext((ImGuiContext*)c);}float TakeoffCoach::now()const{using C=std::chrono::steady_clock;static auto z=C::now();return std::chrono::duration<float>(C::now()-z).count();}
-float TakeoffCoach::f(const std::string& n)const{return cvarManager->getCvar(n).getFloatValue();}int TakeoffCoach::i(const std::string& n)const{return cvarManager->getCvar(n).getIntValue();}bool TakeoffCoach::b(const std::string& n)const{return cvarManager->getCvar(n).getBoolValue();}void TakeoffCoach::set(const std::string& n,float v){cvarManager->getCvar(n).setValue(v);}void TakeoffCoach::set(const std::string& n,int v){cvarManager->getCvar(n).setValue(v);}void TakeoffCoach::set(const std::string& n,bool v){cvarManager->getCvar(n).setValue(v?1:0);}TakeoffCoach::RangeF TakeoffCoach::range(const std::string& lo,const std::string& hi)const{float a=f(lo),d=f(hi);if(a>d)std::swap(a,d);return {a,d};}float TakeoffCoach::sample(RangeF r){if(std::abs(r.hi-r.lo)<.0001f)return r.lo;return std::uniform_real_distribution<float>(r.lo,r.hi)(rng_);}TakeoffCoach::Objective TakeoffCoach::chosenObjective(){Objective o=(Objective)i("tc_objective");if(o==Objective::Random)return std::uniform_int_distribution<int>(0,1)(rng_)?Objective::Fast:Objective::Control;return o;}std::string TakeoffCoach::objectiveName(Objective o){if(o==Objective::Fast)return "FAST TOUCH";if(o==Objective::Control)return "CONTROL TOUCH";if(o==Objective::Score)return "SCORE";return "RANDOM CALL";}
-float TakeoffCoach::clamp(float v,float lo,float hi){return std::max(lo,std::min(v,hi));}float TakeoffCoach::len(const Vector& v){return std::sqrt(v.X*v.X+v.Y*v.Y+v.Z*v.Z);}float TakeoffCoach::len2(const Vector& v){return std::sqrt(v.X*v.X+v.Y*v.Y);}Vector TakeoffCoach::norm(const Vector& v){float l=len(v);return l<.001f?Vector{1,0,0}:v*(1/l);}Vector TakeoffCoach::norm2(const Vector& v){float l=len2(v);return l<.001f?Vector{1,0,0}:Vector{v.X/l,v.Y/l,0};}Vector TakeoffCoach::rot2(const Vector& v,float r){float c=std::cos(r),s=std::sin(r);return {c*v.X-s*v.Y,s*v.X+c*v.Y,v.Z};}float TakeoffCoach::angle2(const Vector& a,const Vector& b){Vector x=norm2(a),y=norm2(b);return std::atan2(x.X*y.Y-x.Y*y.X,clamp(x.X*y.X+x.Y*y.Y,-1,1))*R2D;}Vector TakeoffCoach::forward(const Rotator& r){float p=r.Pitch*PI/32768.f,y=r.Yaw*PI/32768.f,cp=std::cos(p);return {cp*std::cos(y),cp*std::sin(y),std::sin(p)};}std::string TakeoffCoach::n0(float v){std::ostringstream o;o<<std::fixed<<std::setprecision(0)<<v;return o.str();}std::string TakeoffCoach::n1(float v){std::ostringstream o;o<<std::fixed<<std::setprecision(1)<<v;return o.str();}
+    const int screenWidth = static_cast<int>(canvas.GetSize().X);
+    const int placement = getInt("tc_hud_position");
+    const int alpha = static_cast<int>(255.0f * getFloat("tc_hud_opacity"));
+
+    Vector2 origin;
+
+    if (placement == 1)
+        origin = Vector2{25, 155};
+    else if (placement == 2)
+        origin = Vector2{screenWidth - 430, 155};
+    else
+        origin = Vector2{screenWidth / 2 - 420, 30};
+
+    setColor(canvas, 0, 0, 0, alpha);
+    canvas.SetPosition(origin);
+    canvas.FillBox(Vector2{840, 135});
+
+    setColor(canvas, 255, 255, 255, 255);
+    canvas.SetPosition(Vector2{origin.X + 15, origin.Y + 10});
+    canvas.DrawString(attempt_.headline, 1.35f, 1.35f, true);
+
+    if (attempt_.phase == Phase::Feedback)
+    {
+        canvas.SetPosition(Vector2{origin.X + 15, origin.Y + 48});
+        canvas.DrawString(attempt_.detail, 0.95f, 0.95f, true);
+
+        canvas.SetPosition(Vector2{origin.X + 15, origin.Y + 78});
+        canvas.DrawString(attempt_.correction, 1.0f, 1.0f, true);
+        return;
+    }
+
+    const float timingExtent = getFloat("tc_yellow_timing_ms");
+    const float timingMs =
+        attempt_.solution.valid
+        ? -attempt_.solution.jumpDelay * 1000.0f
+        : timingExtent;
+
+    const float timingNorm = clamp(timingMs / timingExtent, -1.0f, 1.0f);
+
+    const float alignmentExtent = getFloat("tc_yellow_alignment");
+    const float alignment =
+        attempt_.solution.valid
+        ? attempt_.solution.alignmentErrorDeg
+        : alignmentExtent;
+
+    const float alignmentNorm =
+        clamp(alignment / alignmentExtent, -1.0f, 1.0f);
+
+    const float reachNorm =
+        attempt_.solution.valid
+        ? clamp(attempt_.solution.confidence, 0.0f, 1.0f)
+        : 0.0f;
+
+    if (placement == 0)
+    {
+        drawGauge(
+            canvas,
+            Vector2{origin.X + 15, origin.Y + 72},
+            "TIMING",
+            format0(timingMs) + " ms",
+            timingNorm,
+            true);
+
+        drawGauge(
+            canvas,
+            Vector2{origin.X + 290, origin.Y + 72},
+            "ALIGN",
+            format1(alignment) + " deg",
+            alignmentNorm,
+            true);
+
+        drawGauge(
+            canvas,
+            Vector2{origin.X + 565, origin.Y + 72},
+            "REACH",
+            format0(reachNorm * 100.0f) + "%",
+            reachNorm,
+            false);
+    }
+    else
+    {
+        drawGauge(
+            canvas,
+            Vector2{origin.X + 15, origin.Y + 72},
+            "TIMING",
+            format0(timingMs) + " ms",
+            timingNorm,
+            true);
+
+        drawGauge(
+            canvas,
+            Vector2{origin.X + 15, origin.Y + 132},
+            "ALIGN",
+            format1(alignment) + " deg",
+            alignmentNorm,
+            true);
+
+        drawGauge(
+            canvas,
+            Vector2{origin.X + 15, origin.Y + 192},
+            "REACH",
+            format0(reachNorm * 100.0f) + "%",
+            reachNorm,
+            false);
+    }
+}
+
+void TakeoffCoach::drawGauge(
+    CanvasWrapper& canvas,
+    Vector2 origin,
+    const std::string& label,
+    const std::string& value,
+    float normalized,
+    bool centered)
+{
+    const int width = 250;
+    const int height = 18;
+
+    if (centered)
+    {
+        setColor(canvas, 200, 55, 55, 235);
+        canvas.SetPosition(origin);
+        canvas.FillBox(Vector2{50, height});
+
+        setColor(canvas, 235, 175, 45, 235);
+        canvas.SetPosition(Vector2{origin.X + 50, origin.Y});
+        canvas.FillBox(Vector2{55, height});
+
+        setColor(canvas, 55, 195, 95, 245);
+        canvas.SetPosition(Vector2{origin.X + 105, origin.Y});
+        canvas.FillBox(Vector2{40, height});
+
+        setColor(canvas, 235, 175, 45, 235);
+        canvas.SetPosition(Vector2{origin.X + 145, origin.Y});
+        canvas.FillBox(Vector2{55, height});
+
+        setColor(canvas, 200, 55, 55, 235);
+        canvas.SetPosition(Vector2{origin.X + 200, origin.Y});
+        canvas.FillBox(Vector2{50, height});
+    }
+    else
+    {
+        setColor(canvas, 200, 55, 55, 235);
+        canvas.SetPosition(origin);
+        canvas.FillBox(Vector2{83, height});
+
+        setColor(canvas, 235, 175, 45, 235);
+        canvas.SetPosition(Vector2{origin.X + 83, origin.Y});
+        canvas.FillBox(Vector2{84, height});
+
+        setColor(canvas, 55, 195, 95, 245);
+        canvas.SetPosition(Vector2{origin.X + 167, origin.Y});
+        canvas.FillBox(Vector2{83, height});
+    }
+
+    const float marker01 =
+        centered
+        ? clamp((normalized + 1.0f) * 0.5f, 0.0f, 1.0f)
+        : clamp(normalized, 0.0f, 1.0f);
+
+    const int markerX =
+        origin.X + static_cast<int>(marker01 * static_cast<float>(width));
+
+    setColor(canvas, 255, 255, 255, 255);
+    canvas.FillTriangle(
+        Vector2{markerX, origin.Y - 7},
+        Vector2{markerX - 6, origin.Y - 1},
+        Vector2{markerX + 6, origin.Y - 1});
+
+    canvas.SetPosition(Vector2{origin.X, origin.Y + 21});
+    canvas.DrawString(
+        getBool("tc_show_numbers") ? label + "  " + value : label,
+        0.88f,
+        0.88f,
+        true);
+}
+
+void TakeoffCoach::RenderSettings()
+{
+    if (ImGui::BeginTabBar("TakeoffCoachTabs"))
+    {
+        if (ImGui::BeginTabItem("Drill"))
+        {
+            renderDrillTab();
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Setup"))
+        {
+            renderSetupTab();
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Feedback"))
+        {
+            renderFeedbackTab();
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
+    }
+}
+
+void TakeoffCoach::renderDrillTab()
+{
+    int objective = getInt("tc_objective");
+    const char* items[] = {"Fast Touch", "Control Touch", "Random Call", "Score"};
+
+    if (ImGui::Combo("Objective", &objective, items, 4))
+        setValue("tc_objective", objective);
+
+    if (ImGui::Button("Start / New Scenario"))
+        cvarManager->executeCommand("tc_new");
+
+    ImGui::SameLine();
+
+    if (ImGui::Button("Stop"))
+        cvarManager->executeCommand("tc_stop");
+
+    bool autoReset = getBool("tc_auto_reset");
+    if (ImGui::Checkbox("Automatically start the next attempt", &autoReset))
+        setValue("tc_auto_reset", autoReset);
+
+    float feedbackSeconds = getFloat("tc_feedback_seconds");
+    if (ImGui::SliderFloat(
+            "Result duration",
+            &feedbackSeconds,
+            0.5f,
+            8.0f,
+            "%.1f s"))
+    {
+        setValue("tc_feedback_seconds", feedbackSeconds);
+    }
+
+    ImGui::TextWrapped(
+        "Fast Touch rewards speed. Control Touch rewards lower relative speed. "
+        "Random Call chooses one of those two each attempt.");
+}
+
+void TakeoffCoach::renderSetupTab()
+{
+    ImGui::TextWrapped(
+        "Each pair is a random range. Put both handles together for a fixed value.");
+
+    ImGui::Separator();
+    ImGui::Text("POSITION");
+
+    rangeControl("Approach distance", "tc_distance_min", "tc_distance_max",
+        1200.0f, 6000.0f, "%.0f uu");
+    rangeControl("Lateral offset", "tc_lateral_min", "tc_lateral_max",
+        -2200.0f, 2200.0f, "%.0f uu");
+    rangeControl("Ball height", "tc_ball_height_min", "tc_ball_height_max",
+        120.0f, 1400.0f, "%.0f uu");
+    rangeControl("Setup rotation", "tc_setup_rotation_min", "tc_setup_rotation_max",
+        -180.0f, 180.0f, "%.0f deg");
+    rangeControl("Car facing offset", "tc_car_facing_min", "tc_car_facing_max",
+        -90.0f, 90.0f, "%.0f deg");
+
+    ImGui::Separator();
+    ImGui::Text("MOTION");
+
+    rangeControl("Car speed", "tc_car_speed_min", "tc_car_speed_max",
+        0.0f, 2300.0f, "%.0f uu/s");
+    rangeControl("Car velocity angle", "tc_car_velocity_angle_min", "tc_car_velocity_angle_max",
+        -120.0f, 120.0f, "%.0f deg");
+    rangeControl("Ball horizontal speed", "tc_ball_speed_min", "tc_ball_speed_max",
+        0.0f, 2200.0f, "%.0f uu/s");
+    rangeControl("Ball vertical speed", "tc_ball_vertical_min", "tc_ball_vertical_max",
+        -500.0f, 1600.0f, "%.0f uu/s");
+    rangeControl("Ball travel direction", "tc_ball_direction_min", "tc_ball_direction_max",
+        -180.0f, 180.0f, "%.0f deg");
+
+    ImGui::TextWrapped(
+        "Ball direction: 0 = away, +/-90 = crossing, +/-180 = toward.");
+}
+
+void TakeoffCoach::renderFeedbackTab()
+{
+    bool showHud = getBool("tc_show_hud");
+    if (ImGui::Checkbox("Show HUD", &showHud))
+        setValue("tc_show_hud", showHud);
+
+    bool showNumbers = getBool("tc_show_numbers");
+    if (ImGui::Checkbox("Show numbers", &showNumbers))
+        setValue("tc_show_numbers", showNumbers);
+
+    int placement = getInt("tc_hud_position");
+    const char* positions[] = {"Top", "Left", "Right"};
+
+    if (ImGui::Combo("HUD position", &placement, positions, 3))
+        setValue("tc_hud_position", placement);
+
+    float opacity = getFloat("tc_hud_opacity");
+    if (ImGui::SliderFloat("Panel opacity", &opacity, 0.2f, 1.0f, "%.2f"))
+        setValue("tc_hud_opacity", opacity);
+
+    float greenTiming = getFloat("tc_green_timing_ms");
+    if (ImGui::SliderFloat(
+            "Green timing window",
+            &greenTiming,
+            20.0f,
+            150.0f,
+            "%.0f ms"))
+    {
+        setValue("tc_green_timing_ms", greenTiming);
+    }
+
+    float yellowTiming = getFloat("tc_yellow_timing_ms");
+    if (ImGui::SliderFloat(
+            "Yellow timing limit",
+            &yellowTiming,
+            70.0f,
+            500.0f,
+            "%.0f ms"))
+    {
+        setValue("tc_yellow_timing_ms", yellowTiming);
+    }
+
+    float greenAlignment = getFloat("tc_green_alignment");
+    if (ImGui::SliderFloat(
+            "Green alignment",
+            &greenAlignment,
+            1.0f,
+            15.0f,
+            "%.1f deg"))
+    {
+        setValue("tc_green_alignment", greenAlignment);
+    }
+
+    float yellowAlignment = getFloat("tc_yellow_alignment");
+    if (ImGui::SliderFloat(
+            "Yellow alignment",
+            &yellowAlignment,
+            4.0f,
+            30.0f,
+            "%.1f deg"))
+    {
+        setValue("tc_yellow_alignment", yellowAlignment);
+    }
+}
+
+bool TakeoffCoach::rangeControl(
+    const char* label,
+    const std::string& minName,
+    const std::string& maxName,
+    float low,
+    float high,
+    const char* format)
+{
+    float minimum = getFloat(minName);
+    float maximum = getFloat(maxName);
+
+    const bool changed = ImGui::DragFloatRange2(
+        label,
+        &minimum,
+        &maximum,
+        (high - low) / 500.0f,
+        low,
+        high,
+        format,
+        format);
+
+    if (changed)
+    {
+        if (minimum > maximum)
+            std::swap(minimum, maximum);
+
+        setValue(minName, minimum);
+        setValue(maxName, maximum);
+    }
+
+    return changed;
+}
+
+std::string TakeoffCoach::GetPluginName()
+{
+    return "Takeoff Coach";
+}
+
+void TakeoffCoach::SetImGuiContext(uintptr_t ctx)
+{
+    ImGui::SetCurrentContext(reinterpret_cast<ImGuiContext*>(ctx));
+}
+
+float TakeoffCoach::nowSeconds() const
+{
+    using Clock = std::chrono::steady_clock;
+    static const auto origin = Clock::now();
+
+    return std::chrono::duration<float>(Clock::now() - origin).count();
+}
+
+float TakeoffCoach::getFloat(const std::string& name) const
+{
+    return cvarManager->getCvar(name).getFloatValue();
+}
+
+int TakeoffCoach::getInt(const std::string& name) const
+{
+    return cvarManager->getCvar(name).getIntValue();
+}
+
+bool TakeoffCoach::getBool(const std::string& name) const
+{
+    return cvarManager->getCvar(name).getBoolValue();
+}
+
+void TakeoffCoach::setValue(const std::string& name, float value)
+{
+    cvarManager->getCvar(name).setValue(value);
+}
+
+void TakeoffCoach::setValue(const std::string& name, int value)
+{
+    cvarManager->getCvar(name).setValue(value);
+}
+
+void TakeoffCoach::setValue(const std::string& name, bool value)
+{
+    cvarManager->getCvar(name).setValue(value ? 1 : 0);
+}
+
+float TakeoffCoach::sample(
+    const std::string& minName,
+    const std::string& maxName)
+{
+    float minimum = getFloat(minName);
+    float maximum = getFloat(maxName);
+
+    if (minimum > maximum)
+        std::swap(minimum, maximum);
+
+    if (std::abs(maximum - minimum) < 0.0001f)
+        return minimum;
+
+    std::uniform_real_distribution<float> distribution(minimum, maximum);
+    return distribution(rng_);
+}
+
+TakeoffCoach::Objective TakeoffCoach::chooseObjective()
+{
+    const Objective configured =
+        static_cast<Objective>(getInt("tc_objective"));
+
+    if (configured == Objective::RandomCall)
+    {
+        std::uniform_int_distribution<int> distribution(0, 1);
+
+        return distribution(rng_) == 0
+            ? Objective::Fast
+            : Objective::Control;
+    }
+
+    return configured;
+}
+
+std::string TakeoffCoach::objectiveName(Objective objective)
+{
+    switch (objective)
+    {
+    case Objective::Fast:
+        return "FAST TOUCH";
+    case Objective::Control:
+        return "CONTROL TOUCH";
+    case Objective::RandomCall:
+        return "RANDOM CALL";
+    case Objective::Score:
+        return "SCORE";
+    default:
+        return "TAKEOFF";
+    }
+}
+
+float TakeoffCoach::clamp(float value, float low, float high)
+{
+    return std::max(low, std::min(value, high));
+}
+
+float TakeoffCoach::length(const Vector& value)
+{
+    return std::sqrt(
+        value.X * value.X
+        + value.Y * value.Y
+        + value.Z * value.Z);
+}
+
+float TakeoffCoach::length2D(const Vector& value)
+{
+    return std::sqrt(value.X * value.X + value.Y * value.Y);
+}
+
+Vector TakeoffCoach::normalized2D(const Vector& value)
+{
+    const float magnitude = length2D(value);
+
+    if (magnitude < 0.001f)
+        return Vector{1.0f, 0.0f, 0.0f};
+
+    return Vector{
+        value.X / magnitude,
+        value.Y / magnitude,
+        0.0f};
+}
+
+Vector TakeoffCoach::rotate2D(const Vector& value, float radians)
+{
+    const float cosine = std::cos(radians);
+    const float sine = std::sin(radians);
+
+    return Vector{
+        cosine * value.X - sine * value.Y,
+        sine * value.X + cosine * value.Y,
+        value.Z};
+}
+
+float TakeoffCoach::signedAngleDeg2D(
+    const Vector& from,
+    const Vector& to)
+{
+    const Vector a = normalized2D(from);
+    const Vector b = normalized2D(to);
+
+    const float cross = a.X * b.Y - a.Y * b.X;
+    const float dot = clamp(a.X * b.X + a.Y * b.Y, -1.0f, 1.0f);
+
+    return std::atan2(cross, dot) * RAD_TO_DEG;
+}
+
+Vector TakeoffCoach::forwardFromRotator(Rotator rotation)
+{
+    const float pitch =
+        static_cast<float>(rotation.Pitch) * PI / 32768.0f;
+
+    const float yaw =
+        static_cast<float>(rotation.Yaw) * PI / 32768.0f;
+
+    const float cosPitch = std::cos(pitch);
+
+    return Vector{
+        cosPitch * std::cos(yaw),
+        cosPitch * std::sin(yaw),
+        std::sin(pitch)};
+}
+
+std::string TakeoffCoach::format0(float value)
+{
+    std::ostringstream output;
+    output << std::fixed << std::setprecision(0) << value;
+    return output.str();
+}
+
+std::string TakeoffCoach::format1(float value)
+{
+    std::ostringstream output;
+    output << std::fixed << std::setprecision(1) << value;
+    return output.str();
+}
+
