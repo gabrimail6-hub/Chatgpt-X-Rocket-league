@@ -132,6 +132,18 @@ void TakeoffCoach::registerCvarsAndCommands()
 
 void TakeoffCoach::startAttempt(bool randomize)
 {
+    // UI and console callbacks are not guaranteed to run at a safe point for
+    // mutating Unreal actors. Defer the entire setup to the game thread.
+    gameWrapper->SetTimeout(
+        [this, randomize](GameWrapper*)
+        {
+            startAttemptNow(randomize);
+        },
+        0.05f);
+}
+
+void TakeoffCoach::startAttemptNow(bool randomize)
+{
     if (!gameWrapper->IsInFreeplay())
     {
         attempt_.active = false;
@@ -142,9 +154,18 @@ void TakeoffCoach::startAttempt(bool randomize)
 
     auto server = gameWrapper->GetCurrentGameState();
     auto car = gameWrapper->GetLocalCar();
+
+    if (server.IsNull() || car.IsNull())
+    {
+        attempt_.active = false;
+        attempt_.headline = "SETUP NOT READY";
+        attempt_.detail = "Wait a moment after entering Freeplay, then start again.";
+        return;
+    }
+
     auto ball = server.GetBall();
 
-    if (car.IsNull() || ball.IsNull())
+    if (ball.IsNull())
     {
         attempt_.active = false;
         attempt_.headline = "SETUP FAILED";
@@ -202,7 +223,6 @@ void TakeoffCoach::startAttempt(bool randomize)
 
     ball.SetLocation(ballPosition);
     ball.SetVelocity(ballVelocity);
-    ball.SetAngularVelocity(Vector{0.0f, 0.0f, 0.0f}, false);
 
     attempt_ = AttemptState{};
     attempt_.active = true;
@@ -415,6 +435,19 @@ void TakeoffCoach::renderHud(CanvasWrapper canvas)
     if (!cvarBool("tc_show_hud") || !gameWrapper->IsInFreeplay())
         return;
 
+    canvas.SetColor(
+        static_cast<char>(0),
+        static_cast<char>(0),
+        static_cast<char>(0),
+        static_cast<char>(190));
+    canvas.SetPosition(Vector2{25, 92});
+    canvas.FillBox(Vector2{1120, 112});
+
+    canvas.SetColor(
+        static_cast<char>(255),
+        static_cast<char>(255),
+        static_cast<char>(255),
+        static_cast<char>(255));
     canvas.SetPosition(Vector2{40, 105});
     canvas.DrawString("TAKEOFF COACH 2", 1.7f, 1.7f, true);
 
@@ -422,7 +455,13 @@ void TakeoffCoach::renderHud(CanvasWrapper canvas)
     canvas.DrawString(attempt_.headline, 1.45f, 1.45f, true);
 
     canvas.SetPosition(Vector2{40, 166});
-    canvas.DrawString(attempt_.detail, 1.0f, 1.0f, false);
+    canvas.DrawString(attempt_.detail, 1.0f, 1.0f, true);
+
+    canvas.SetColor(
+        static_cast<char>(255),
+        static_cast<char>(255),
+        static_cast<char>(255),
+        static_cast<char>(255));
 }
 
 void TakeoffCoach::RenderSettings()

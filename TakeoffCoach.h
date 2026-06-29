@@ -55,6 +55,7 @@ private:
 
     void registerCvarsAndCommands();
     void startAttempt(bool randomize);
+    void startAttemptNow(bool randomize);
     void resetAttempt();
     void handleVehicleInput(CarWrapper caller, void* params, std::string eventName);
     void updateRecommendation(CarWrapper car);
