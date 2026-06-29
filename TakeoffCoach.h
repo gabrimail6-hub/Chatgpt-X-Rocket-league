@@ -5,7 +5,6 @@
 #include "bakkesmod/wrappers/GameObject/CarWrapper.h"
 #include "bakkesmod/wrappers/GameObject/BallWrapper.h"
 #include "bakkesmod/wrappers/CanvasWrapper.h"
-#include "bakkesmod/wrappers/Engine/ControllerInput.h"
 
 #include <chrono>
 #include <memory>
