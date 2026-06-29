@@ -12,7 +12,7 @@
 BAKKESMOD_PLUGIN(
     TakeoffCoach,
     "Takeoff Coach",
-    "3.3.0",
+    "3.3.1",
     PLUGINTYPE_FREEPLAY
 )
 
@@ -59,7 +59,7 @@ void TakeoffCoach::onLoad()
             renderHud(canvas);
         });
 
-    cvarManager->log("Takeoff Coach 3.1 loaded.");
+    cvarManager->log("Takeoff Coach 3.3.1 loaded.");
 }
 
 void TakeoffCoach::onUnload()
@@ -603,12 +603,14 @@ TakeoffCoach::Solution TakeoffCoach::solve(
     float now) const
 {
     Solution best;
+
     const Vector carPosition = car.GetLocation();
     const Vector carVelocity = car.GetVelocity();
     const Vector ballPosition = ball.GetLocation();
     const Vector ballVelocity = ball.GetVelocity();
 
     const float carSpeed = length2D(carVelocity);
+
     const Vector travelDirection =
         carSpeed > 80.0f
         ? normalized2D(carVelocity)
@@ -616,9 +618,23 @@ TakeoffCoach::Solution TakeoffCoach::solve(
 
     const float minContact = getFloat("tc_contact_min");
     const float maxContact = getFloat("tc_contact_max");
-    const float horizontalCalibration = getFloat("tc_horizontal_calibration");
-    const float verticalCalibration = getFloat("tc_vertical_calibration");
-    const float tolerance = getFloat("tc_position_tolerance");
+    const float horizontalCalibration =
+        getFloat("tc_horizontal_calibration");
+    const float verticalCalibration =
+        getFloat("tc_vertical_calibration");
+    const float tolerance =
+        getFloat("tc_position_tolerance");
+
+    float targetHeightMin =
+        getFloat("tc_target_height_min");
+    float targetHeightMax =
+        getFloat("tc_target_height_max");
+
+    if (targetHeightMin > targetHeightMax)
+        std::swap(targetHeightMin, targetHeightMax);
+
+    const float perfectHeight =
+        0.5f * (targetHeightMin + targetHeightMax);
 
     float bestHeightError = 1.0e9f;
     float bestJumpDelay = -1.0e9f;
@@ -629,7 +645,10 @@ TakeoffCoach::Solution TakeoffCoach::solve(
          contactDelay += 0.025f)
     {
         const Vector predictedBall =
-            predictBallPosition(ballPosition, ballVelocity, contactDelay);
+            predictBallPosition(
+                ballPosition,
+                ballVelocity,
+                contactDelay);
 
         if (predictedBall.Z < SAFE_FLOOR
             || predictedBall.Z > SAFE_CEILING
@@ -638,12 +657,6 @@ TakeoffCoach::Solution TakeoffCoach::solve(
         {
             continue;
         }
-
-        float targetHeightMin = getFloat("tc_target_height_min");
-        float targetHeightMax = getFloat("tc_target_height_max");
-
-        if (targetHeightMin > targetHeightMax)
-            std::swap(targetHeightMin, targetHeightMax);
 
         if (predictedBall.Z < targetHeightMin
             || predictedBall.Z > targetHeightMax)
@@ -657,68 +670,99 @@ TakeoffCoach::Solution TakeoffCoach::solve(
         {
             const Vector goal{
                 0.0f,
-                static_cast<float>(attempt_.scenario.goalSign) * 5120.0f,
+                static_cast<float>(
+                    attempt_.scenario.goalSign) * 5120.0f,
                 300.0f};
-            desiredOutgoing = normalized2D(goal - predictedBall);
+
+            desiredOutgoing =
+                normalized2D(goal - predictedBall);
         }
         else if (attempt_.objective == Objective::Control)
         {
             desiredOutgoing =
                 length2D(ballVelocity) > 80.0f
                 ? normalized2D(ballVelocity)
-                : normalized2D(predictedBall - carPosition);
+                : normalized2D(
+                    predictedBall - carPosition);
         }
         else
         {
-            desiredOutgoing = normalized2D(predictedBall - carPosition);
+            desiredOutgoing =
+                normalized2D(
+                    predictedBall - carPosition);
         }
 
         const float behind =
-            attempt_.objective == Objective::Control ? 125.0f : 150.0f;
+            attempt_.objective == Objective::Control
+            ? 125.0f
+            : 150.0f;
 
         const Vector targetCar =
             predictedBall
             - desiredOutgoing * behind
             - Vector{0.0f, 0.0f, 45.0f};
 
-        const Vector delta = targetCar - carPosition;
-        const float horizontalNeed = length2D(delta);
-        const float verticalNeed = std::max(0.0f, delta.Z);
+        const Vector delta =
+            targetCar - carPosition;
+
+        const float horizontalNeed =
+            length2D(delta);
+
+        const float verticalNeed =
+            std::max(0.0f, delta.Z);
 
         float requiredDuration = -1.0f;
         float confidence = 0.0f;
 
         for (float duration = 0.34f;
-             duration <= std::min(2.0f, contactDelay + 0.2f);
+             duration <= std::min(
+                 2.0f,
+                 contactDelay + 0.2f);
              duration += 1.0f / 120.0f)
         {
             const float horizontalReach =
                 carSpeed * duration
-                + 0.5f * BOOST_ACCEL * horizontalCalibration * duration * duration
+                + 0.5f
+                    * BOOST_ACCEL
+                    * horizontalCalibration
+                    * duration
+                    * duration
                 + tolerance;
 
-            const float secondJumpTime = std::max(0.0f, duration - 0.14f);
+            const float secondJumpTime =
+                std::max(
+                    0.0f,
+                    duration - 0.14f);
+
             const float verticalReach =
                 FIRST_JUMP * duration
                 + SECOND_JUMP * secondJumpTime
                 + 0.5f
-                    * (BOOST_ACCEL * verticalCalibration + GRAVITY_Z)
+                    * (
+                        BOOST_ACCEL
+                            * verticalCalibration
+                        + GRAVITY_Z)
                     * duration
                     * duration
                 + tolerance;
 
-            if (horizontalReach >= horizontalNeed && verticalReach >= verticalNeed)
+            if (horizontalReach >= horizontalNeed
+                && verticalReach >= verticalNeed)
             {
                 requiredDuration = duration;
 
                 const float horizontalMargin =
-                    (horizontalReach - horizontalNeed) / std::max(1.0f, tolerance);
+                    (horizontalReach - horizontalNeed)
+                    / std::max(1.0f, tolerance);
 
                 const float verticalMargin =
-                    (verticalReach - verticalNeed) / std::max(1.0f, tolerance);
+                    (verticalReach - verticalNeed)
+                    / std::max(1.0f, tolerance);
 
                 confidence = clamp(
-                    std::min(horizontalMargin, verticalMargin),
+                    std::min(
+                        horizontalMargin,
+                        verticalMargin),
                     0.0f,
                     1.0f);
 
@@ -729,41 +773,49 @@ TakeoffCoach::Solution TakeoffCoach::solve(
         if (requiredDuration < 0.0f)
             continue;
 
-        const float jumpDelay = contactDelay - requiredDuration;
-        const Vector requiredDirection = normalized2D(delta);
+        const float jumpDelay =
+            contactDelay - requiredDuration;
+
+        const Vector requiredDirection =
+            normalized2D(delta);
+
         const float alignment =
-            signedAngleDeg2D(travelDirection, requiredDirection);
-
-        float targetHeightMin = getFloat("tc_target_height_min");
-        float targetHeightMax = getFloat("tc_target_height_max");
-
-        if (targetHeightMin > targetHeightMax)
-            std::swap(targetHeightMin, targetHeightMax);
-
-        const float perfectHeight =
-            0.5f * (targetHeightMin + targetHeightMax);
+            signedAngleDeg2D(
+                travelDirection,
+                requiredDirection);
 
         const float heightError =
-            std::abs(predictedBall.Z - perfectHeight);
+            std::abs(
+                predictedBall.Z - perfectHeight);
 
-        const float alignmentAbs = std::abs(alignment);
+        const float alignmentAbs =
+            std::abs(alignment);
 
         const bool betterHeight =
             heightError < bestHeightError - 0.5f;
 
         const bool sameHeight =
-            std::abs(heightError - bestHeightError) <= 0.5f;
+            std::abs(
+                heightError - bestHeightError)
+            <= 0.5f;
 
         const bool betterTiming =
-            sameHeight && jumpDelay > bestJumpDelay + 0.001f;
+            sameHeight
+            && jumpDelay > bestJumpDelay + 0.001f;
 
         const bool sameTiming =
-            sameHeight && std::abs(jumpDelay - bestJumpDelay) <= 0.001f;
+            sameHeight
+            && std::abs(
+                jumpDelay - bestJumpDelay)
+            <= 0.001f;
 
         const bool betterAlignment =
-            sameTiming && alignmentAbs < bestAlignmentAbs;
+            sameTiming
+            && alignmentAbs < bestAlignmentAbs;
 
-        if (betterHeight || betterTiming || betterAlignment)
+        if (betterHeight
+            || betterTiming
+            || betterAlignment)
         {
             bestHeightError = heightError;
             bestJumpDelay = jumpDelay;
@@ -771,13 +823,14 @@ TakeoffCoach::Solution TakeoffCoach::solve(
 
             best.valid = true;
             best.jumpDelay = jumpDelay;
-            best.idealJumpAbsolute = now + jumpDelay;
+            best.idealJumpAbsolute =
+                now + jumpDelay;
             best.contactDelay = contactDelay;
             best.confidence = confidence;
             best.alignmentErrorDeg = alignment;
             best.contactPoint = predictedBall;
-            best.requiredDirection = requiredDirection;
-        }
+            best.requiredDirection =
+                requiredDirection;
         }
     }
 
