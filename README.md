@@ -1,12 +1,24 @@
-# BakkesmodPluginTemplate
+# Takeoff Coach 2
 
-## Instructions for use
- 1. Download the repo as a zip 
- 2. Move the zip into Documents\Visual Studio 2022\Templates\ProjectTemplates
- 3. Unpack the zip 
- 4. Restart your computer
- 5. Start visual studio. Create a new project and you should see BakkesModPlugin as a project template
- 6. Profit $$$
+A BakkesMod Freeplay plugin for training the latest viable fast-aerial takeoff.
 
-### Video showing every step above (Except the restart)
-[ClickMe](https://youtu.be/Pd3Sa5VWEmc)
+## What changed
+
+- The car starts with configurable ground speed.
+- The ball starts with configurable forward and upward velocity.
+- Random mode changes angle, speed, and lateral offset.
+- The coaching cue recalculates from the live ball position and velocity.
+- The HUD shows WAIT, ALIGN, JUMP NOW, or TOO LATE.
+- The first jump is graded for timing and direction.
+- All important values are adjustable in F2 > Plugins > Takeoff Coach.
+
+## Use
+
+1. Load `TakeoffCoach.dll`.
+2. Enter Freeplay.
+3. Open F2 > Plugins > Takeoff Coach.
+4. Press **Start randomized drill**.
+5. Stay grounded while the HUD says WAIT, line up while it says ALIGN, and fast aerial when it says JUMP NOW.
+
+The reach calculation is a configurable training model, not a perfect Rocket League physics solver. Tune **How late to wait** and the boost-efficiency sliders until the JUMP NOW cue matches takeoffs that are barely reachable for your mechanics.
+

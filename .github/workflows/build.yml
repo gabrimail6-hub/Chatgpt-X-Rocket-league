@@ -20,6 +20,12 @@ jobs:
           repository: bakkesmodorg/BakkesModSDK
           path: BakkesModSDK
 
+      - name: Download BakkesMod plugin template for ImGui
+        uses: actions/checkout@v4
+        with:
+          repository: Martinii89/BakkesmodPluginTemplate
+          path: Template
+
       - name: Enable 64-bit MSVC compiler
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -28,10 +34,15 @@ jobs:
       - name: Compile DLL
         shell: cmd
         run: |
-          mkdir build
+          if not exist build mkdir build
           cl /nologo /std:c++17 /EHsc /LD /MD ^
             /I"BakkesModSDK\include" ^
+            /I"Template" ^
+            /I"Template\IMGUI" ^
             TakeoffCoach.cpp ^
+            Template\IMGUI\imgui.cpp ^
+            Template\IMGUI\imgui_draw.cpp ^
+            Template\IMGUI\imgui_widgets.cpp ^
             /link ^
             /LIBPATH:"BakkesModSDK\lib" ^
             pluginsdk.lib ^
@@ -39,10 +50,11 @@ jobs:
 
       - name: Copy config
         shell: cmd
-        run: copy takeoffcoach.cfg build\takeoffcoach.cfg
+        run: copy /Y takeoffcoach.cfg build\takeoffcoach.cfg
 
       - name: Upload plugin
         uses: actions/upload-artifact@v4
         with:
           name: TakeoffCoach
           path: build
+
