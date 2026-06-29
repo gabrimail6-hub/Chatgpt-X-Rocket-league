@@ -7,6 +7,7 @@
 #include "bakkesmod/wrappers/CanvasWrapper.h"
 
 #include <chrono>
+#include <random>
 #include <memory>
 #include <string>
 
@@ -45,7 +46,7 @@ private:
     void startAttempt(bool randomize);
     void resetAttempt();
     void handleVehicleInput(CarWrapper caller, void* params, std::string eventName);
-    void gradeTakeoff(const CarWrapper& car);
+    void gradeTakeoff(CarWrapper car);
     void render(CanvasWrapper canvas);
 
     float elapsedSeconds() const;

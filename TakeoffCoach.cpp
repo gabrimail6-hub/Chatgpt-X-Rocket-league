@@ -21,10 +21,10 @@ namespace
     constexpr float UU_PER_METER = 100.0f;
 
     // Baseline drill geometry. The whole setup is rotated when random mode is used.
-    constexpr Vector BASE_CAR_START{0.0f, -3300.0f, 17.0f};
-    constexpr Vector BASE_TAKEOFF{0.0f, -950.0f, 17.0f};
-    constexpr Vector BASE_BALL_START{0.0f, 150.0f, 760.0f};
-    constexpr Vector BASE_BALL_VELOCITY{0.0f, 520.0f, 650.0f};
+    const Vector BASE_CAR_START{0.0f, -3300.0f, 17.0f};
+    const Vector BASE_TAKEOFF{0.0f, -950.0f, 17.0f};
+    const Vector BASE_BALL_START{0.0f, 150.0f, 760.0f};
+    const Vector BASE_BALL_VELOCITY{0.0f, 520.0f, 650.0f};
 
     constexpr float EARLY_LATE_GOOD = 120.0f;
     constexpr float EARLY_LATE_OK = 260.0f;
@@ -217,7 +217,7 @@ void TakeoffCoach::handleVehicleInput(
     auto* input = static_cast<ControllerInput*>(params);
     const float now = elapsedSeconds();
 
-    const bool currentlyBraking = input->throttle < -0.10f;
+    const bool currentlyBraking = input->Throttle < -0.10f;
     if (currentlyBraking && !attempt_.braking)
     {
         attempt_.braking = true;
@@ -230,7 +230,7 @@ void TakeoffCoach::handleVehicleInput(
         attempt_.accumulatedBrakeSeconds += now - attempt_.brakeStartSeconds;
     }
 
-    const bool jumpPressed = input->jump != 0;
+    const bool jumpPressed = input->Jump != 0;
     if (jumpPressed && !attempt_.previousJump)
     {
         if (attempt_.braking)
@@ -244,7 +244,7 @@ void TakeoffCoach::handleVehicleInput(
     attempt_.previousJump = jumpPressed;
 }
 
-void TakeoffCoach::gradeTakeoff(const CarWrapper& car)
+void TakeoffCoach::gradeTakeoff(CarWrapper car)
 {
     const Vector location = car.GetLocation();
     const Vector velocity = car.GetVelocity();
@@ -343,14 +343,14 @@ void TakeoffCoach::render(CanvasWrapper canvas)
     if (!gameWrapper->IsInFreeplay())
         return;
 
-    canvas.SetPosition(Vector2{40.0f, 110.0f});
+    canvas.SetPosition(Vector2{40, 110});
     canvas.DrawString(
         "TAKEOFF COACH",
         2.0f,
         2.0f,
         true);
 
-    canvas.SetPosition(Vector2{40.0f, 145.0f});
+    canvas.SetPosition(Vector2{40, 145});
     canvas.DrawString(
         attempt_.feedback,
         1.35f,
@@ -379,7 +379,7 @@ void TakeoffCoach::render(CanvasWrapper canvas)
                  << "   Speed: " << std::fixed << std::setprecision(0)
                  << speed << " / " << attempt_.targetSpeed;
 
-            canvas.SetPosition(Vector2{40.0f, 172.0f});
+            canvas.SetPosition(Vector2{40, 172});
             canvas.DrawString(live.str(), 1.1f, 1.1f, false);
         }
     }
