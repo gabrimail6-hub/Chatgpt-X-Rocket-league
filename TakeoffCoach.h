@@ -80,6 +80,7 @@ private:
         bool everHadSolution = false;
         bool targetLocked = false;
         bool allowUnreachable = false;
+        bool invalidNonGroundBounce = false;
 
         float startedAt = 0.0f;
         float jumpAt = 0.0f;
@@ -89,6 +90,7 @@ private:
         float timingErrorMs = 0.0f;
         float alignmentErrorDeg = 0.0f;
         float previousBallSpeed = 0.0f;
+        Vector previousBallVelocity{};
         float contactHeight = 0.0f;
         float validationDeadline = 0.0f;
         float lockedContactAbsolute = 0.0f;

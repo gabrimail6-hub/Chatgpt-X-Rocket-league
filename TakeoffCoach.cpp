@@ -12,7 +12,7 @@
 BAKKESMOD_PLUGIN(
     TakeoffCoach,
     "Takeoff Coach",
-    "3.3.4",
+    "3.3.5",
     PLUGINTYPE_FREEPLAY
 )
 
@@ -59,7 +59,7 @@ void TakeoffCoach::onLoad()
             renderHud(canvas);
         });
 
-    cvarManager->log("Takeoff Coach 3.3.4 loaded.");
+    cvarManager->log("Takeoff Coach 3.3.5 loaded.");
 }
 
 void TakeoffCoach::onUnload()
@@ -141,15 +141,16 @@ void TakeoffCoach::registerCvars()
     reg("tc_yellow_alignment", "11", 4.0f, 30.0f);
     reg("tc_alignment_display", "35", 10.0f, 90.0f);
 
-    reg("tc_color_red_r", "200", 0.0f, 255.0f);
-    reg("tc_color_red_g", "55", 0.0f, 255.0f);
-    reg("tc_color_red_b", "55", 0.0f, 255.0f);
-    reg("tc_color_yellow_r", "235", 0.0f, 255.0f);
-    reg("tc_color_yellow_g", "175", 0.0f, 255.0f);
-    reg("tc_color_yellow_b", "45", 0.0f, 255.0f);
-    reg("tc_color_green_r", "55", 0.0f, 255.0f);
-    reg("tc_color_green_g", "195", 0.0f, 255.0f);
-    reg("tc_color_green_b", "95", 0.0f, 255.0f);
+    reg("tc_color_red_r", "100", 0.0f, 255.0f);
+    reg("tc_color_red_g", "100", 0.0f, 255.0f);
+    reg("tc_color_red_b", "100", 0.0f, 255.0f);
+    reg("tc_color_yellow_r", "50", 0.0f, 255.0f);
+    reg("tc_color_yellow_g", "111", 0.0f, 255.0f);
+    reg("tc_color_yellow_b", "144", 0.0f, 255.0f);
+    reg("tc_color_green_r", "0", 0.0f, 255.0f);
+    reg("tc_color_green_g", "255", 0.0f, 255.0f);
+    reg("tc_color_green_b", "67", 0.0f, 255.0f);
+    reg("tc_show_contact_marker", "1", 0.0f, 1.0f);
 
     constexpr unsigned char permission = PERMISSION_FREEPLAY;
 
@@ -232,6 +233,7 @@ void TakeoffCoach::startScenarioNow(uint64_t generation)
     attempt_.touched = false;
     attempt_.scored = false;
     attempt_.everHadSolution = false;
+    attempt_.invalidNonGroundBounce = false;
     attempt_.targetLocked = false;
 
     std::uniform_real_distribution<float> unreachableRoll(0.0f, 100.0f);
@@ -254,7 +256,10 @@ void TakeoffCoach::startScenarioNow(uint64_t generation)
     {
         auto ball = server.GetBall();
         if (!ball.IsNull())
+        {
             attempt_.previousBallSpeed = length(ball.GetVelocity());
+            attempt_.previousBallVelocity = ball.GetVelocity();
+        }
     }
 }
 
@@ -414,6 +419,41 @@ void TakeoffCoach::updateAttempt(CarWrapper car, float now)
     if (ball.IsNull())
         return;
 
+    const Vector currentBallVelocity =
+        ball.GetVelocity();
+
+    const Vector currentBallPosition =
+        ball.GetLocation();
+
+    const Vector velocityDelta =
+        currentBallVelocity
+        - attempt_.previousBallVelocity;
+
+    const bool sharpVelocityChange =
+        length(velocityDelta) > 250.0f;
+
+    const bool nearSideWall =
+        std::abs(currentBallPosition.X) > 3800.0f;
+
+    const bool nearBackWall =
+        std::abs(currentBallPosition.Y) > 4900.0f;
+
+    const bool nearCeiling =
+        currentBallPosition.Z > 1900.0f;
+
+    const bool nearGround =
+        currentBallPosition.Z < 150.0f;
+
+    if (sharpVelocityChange
+        && !nearGround
+        && (nearSideWall || nearBackWall || nearCeiling))
+    {
+        attempt_.invalidNonGroundBounce = true;
+    }
+
+    attempt_.previousBallVelocity =
+        currentBallVelocity;
+
     if (attempt_.phase == Phase::Reading)
         updateReading(car, ball, now);
     else if (attempt_.phase == Phase::Airborne)
@@ -444,7 +484,12 @@ void TakeoffCoach::updateReading(
             const Solution initialSolution =
                 solve(car, ball, now);
 
-            if (initialSolution.valid)
+            const float minimumInitialDelay =
+                getFloat("tc_min_initial_jump_delay_ms")
+                / 1000.0f;
+
+            if (initialSolution.valid
+                && initialSolution.jumpDelay >= minimumInitialDelay)
             {
                 attempt_.lockedSolution =
                     initialSolution;
@@ -612,7 +657,13 @@ void TakeoffCoach::finishAttempt(
     const float greenAlignment = getFloat("tc_green_alignment");
     const float alignment = std::abs(attempt_.alignmentErrorDeg);
 
-    if (timing < -greenEarly)
+    if (attempt_.invalidNonGroundBounce)
+    {
+        attempt_.headline = "TIMING INVALID: WALL OR CEILING BOUNCE";
+        attempt_.correction =
+            "This attempt is not graded because the locked prediction did not include that bounce.";
+    }
+    else if (timing < -greenEarly)
     {
         attempt_.headline = "EARLY BY " + format0(-timing) + " ms";
         attempt_.correction = "Stay grounded longer before the first jump.";
@@ -1061,7 +1112,8 @@ TakeoffCoach::Solution TakeoffCoach::solveLockedTarget(
         confidence = 0.0f;
 
     const Vector requiredDirection =
-        normalized2D(delta);
+        normalized2D(
+            fixedContactPoint - carPosition);
 
     live.valid = true;
     live.contactPoint = fixedContactPoint;
@@ -1288,6 +1340,31 @@ void TakeoffCoach::renderHud(CanvasWrapper canvas)
                 + getFloat("tc_height_display_margin"),
             halfGreen
                 + getFloat("tc_height_display_margin"));
+    }
+
+    if (getBool("tc_show_contact_marker")
+        && attempt_.targetLocked
+        && !feedback)
+    {
+        const Vector2 marker =
+            canvas.Project(
+                attempt_.lockedSolution.contactPoint);
+
+        setColor(canvas, 255, 255, 255, 245);
+
+        canvas.DrawLine(
+            Vector2{marker.X - 18, marker.Y},
+            Vector2{marker.X + 18, marker.Y},
+            3.0f);
+
+        canvas.DrawLine(
+            Vector2{marker.X, marker.Y - 18},
+            Vector2{marker.X, marker.Y + 18},
+            3.0f);
+
+        canvas.DrawRect(
+            Vector2{marker.X - 11, marker.Y - 11},
+            Vector2{marker.X + 11, marker.Y + 11});
     }
 
     if (feedback)
@@ -1631,6 +1708,18 @@ void TakeoffCoach::renderFeedbackTab()
     if (ImGui::Checkbox("Show contact-height indicator", &showHeight))
         setValue("tc_show_height", showHeight);
 
+    bool showContactMarker =
+        getBool("tc_show_contact_marker");
+
+    if (ImGui::Checkbox(
+            "Show future crossbar-height marker",
+            &showContactMarker))
+    {
+        setValue(
+            "tc_show_contact_marker",
+            showContactMarker);
+    }
+
     int placement = getInt("tc_hud_position");
     const char* positions[] = {"Top", "Left", "Right"};
 
@@ -1742,6 +1831,21 @@ void TakeoffCoach::renderFeedbackTab()
         setValue("tc_color_green_r", greenColor[0] * 255.0f);
         setValue("tc_color_green_g", greenColor[1] * 255.0f);
         setValue("tc_color_green_b", greenColor[2] * 255.0f);
+    }
+
+    if (ImGui::Button("Reset to red / yellow / green"))
+    {
+        setValue("tc_color_red_r", 200.0f);
+        setValue("tc_color_red_g", 55.0f);
+        setValue("tc_color_red_b", 55.0f);
+
+        setValue("tc_color_yellow_r", 235.0f);
+        setValue("tc_color_yellow_g", 175.0f);
+        setValue("tc_color_yellow_b", 45.0f);
+
+        setValue("tc_color_green_r", 55.0f);
+        setValue("tc_color_green_g", 195.0f);
+        setValue("tc_color_green_b", 95.0f);
     }
 
 }
