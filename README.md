@@ -24,3 +24,5 @@ The reach calculation is a configurable training model, not a perfect Rocket Lea
 
 
 <!-- V3 fixed rebuild: 2026-06-29 18:47:43 UTC -->
+
+<!-- Takeoff Coach 3.2 height-gauge update: 2026-06-29 19:32:13 UTC -->

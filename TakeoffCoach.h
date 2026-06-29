@@ -84,6 +84,7 @@ private:
         float timingErrorMs = 0.0f;
         float alignmentErrorDeg = 0.0f;
         float previousBallSpeed = 0.0f;
+        float contactHeight = 0.0f;
 
         std::string headline = "Open settings and start a drill.";
         std::string detail;
