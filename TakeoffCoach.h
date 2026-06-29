@@ -70,11 +70,16 @@ private:
         Objective objective = Objective::Fast;
         Scenario scenario{};
         Solution solution{};
+        Solution lockedSolution{};
+        Solution lastValidSolution{};
         Solution jumpSolution{};
 
         bool previousJump = false;
         bool touched = false;
         bool scored = false;
+        bool everHadSolution = false;
+        bool targetLocked = false;
+        bool allowUnreachable = false;
 
         float startedAt = 0.0f;
         float jumpAt = 0.0f;
@@ -85,6 +90,8 @@ private:
         float alignmentErrorDeg = 0.0f;
         float previousBallSpeed = 0.0f;
         float contactHeight = 0.0f;
+        float validationDeadline = 0.0f;
+        int rejectedSetups = 0;
 
         std::string headline = "Open settings and start a drill.";
         std::string detail;
@@ -115,9 +122,14 @@ private:
         CanvasWrapper& canvas,
         Vector2 origin,
         const std::string& label,
-        const std::string& value,
-        float normalized,
-        bool centered);
+        const std::string& valueText,
+        float value,
+        float greenNegative,
+        float greenPositive,
+        float yellowNegative,
+        float yellowPositive,
+        float displayNegative,
+        float displayPositive);
 
     void renderDrillTab();
     void renderSetupTab();

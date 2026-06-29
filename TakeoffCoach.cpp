@@ -12,7 +12,7 @@
 BAKKESMOD_PLUGIN(
     TakeoffCoach,
     "Takeoff Coach",
-    "3.2.0",
+    "3.3.0",
     PLUGINTYPE_FREEPLAY
 )
 
@@ -78,12 +78,12 @@ void TakeoffCoach::registerCvars()
     reg("tc_auto_reset", "1", 0.0f, 1.0f);
     reg("tc_feedback_seconds", "2.5", 0.5f, 8.0f);
 
-    reg("tc_distance_min", "2600", 1200.0f, 6000.0f);
-    reg("tc_distance_max", "4300", 1200.0f, 6000.0f);
+    reg("tc_distance_min", "-300", -1800.0f, 6000.0f);
+    reg("tc_distance_max", "3000", -1800.0f, 6000.0f);
     reg("tc_lateral_min", "-900", -2200.0f, 2200.0f);
     reg("tc_lateral_max", "900", -2200.0f, 2200.0f);
-    reg("tc_ball_height_min", "220", 120.0f, 1400.0f);
-    reg("tc_ball_height_max", "700", 120.0f, 1400.0f);
+    reg("tc_ball_height_min", "450", 120.0f, 1700.0f);
+    reg("tc_ball_height_max", "1200", 120.0f, 1700.0f);
     reg("tc_setup_rotation_min", "-140", -180.0f, 180.0f);
     reg("tc_setup_rotation_max", "140", -180.0f, 180.0f);
     reg("tc_car_facing_min", "-15", -90.0f, 90.0f);
@@ -108,6 +108,9 @@ void TakeoffCoach::registerCvars()
     reg("tc_vertical_calibration", "0.78", 0.4f, 1.2f);
     reg("tc_position_tolerance", "150", 80.0f, 300.0f);
     reg("tc_control_target", "700", 200.0f, 1600.0f);
+    reg("tc_unreachable_setup_chance", "15", 0.0f, 100.0f);
+    reg("tc_setup_validation_delay", "0.35", 0.10f, 1.50f);
+    reg("tc_max_setup_rejections", "100", 1.0f, 500.0f);
 
     // Desired ball-centre height at contact. Standard Soccar crossbar height
     // is approximately 642.775 uu, so the default band surrounds it.
@@ -200,11 +203,20 @@ void TakeoffCoach::startScenarioNow(uint64_t generation)
     attempt_.objective = scenario.objective;
     attempt_.scenario = scenario;
     attempt_.solution = Solution{};
+    attempt_.lockedSolution = Solution{};
+    attempt_.lastValidSolution = Solution{};
     attempt_.jumpSolution = Solution{};
     attempt_.previousJump = false;
     attempt_.touched = false;
     attempt_.scored = false;
+    attempt_.everHadSolution = false;
+    attempt_.targetLocked = false;
+
+    std::uniform_real_distribution<float> unreachableRoll(0.0f, 100.0f);
+    attempt_.allowUnreachable =
+        unreachableRoll(rng_) < getFloat("tc_unreachable_setup_chance");
     attempt_.startedAt = nowSeconds();
+    attempt_.validationDeadline = attempt_.startedAt + getFloat("tc_setup_validation_delay");
     attempt_.jumpAt = 0.0f;
     attempt_.feedbackUntil = 0.0f;
     attempt_.lastSolveAt = -100.0f;
@@ -339,7 +351,14 @@ void TakeoffCoach::onVehicleInput(CarWrapper car, void* params, std::string)
     if (jumpPressed && !attempt_.previousJump && attempt_.phase == Phase::Reading)
     {
         attempt_.jumpAt = now;
-        attempt_.jumpSolution = attempt_.solution;
+
+        if (attempt_.targetLocked)
+            attempt_.jumpSolution = attempt_.lockedSolution;
+        else if (attempt_.everHadSolution)
+            attempt_.jumpSolution = attempt_.lastValidSolution;
+        else
+            attempt_.jumpSolution = Solution{};
+
         attempt_.phase = Phase::Airborne;
 
         if (attempt_.jumpSolution.valid)
@@ -392,25 +411,65 @@ void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
 
     if (now - attempt_.lastSolveAt >= 1.0f / hz)
     {
-        attempt_.solution = solve(car, ball, now);
+        const Solution live = solve(car, ball, now);
         attempt_.lastSolveAt = now;
+
+        if (live.valid)
+        {
+            attempt_.lastValidSolution = live;
+            attempt_.everHadSolution = true;
+
+            if (!attempt_.targetLocked)
+            {
+                attempt_.lockedSolution = live;
+                attempt_.targetLocked = true;
+                attempt_.rejectedSetups = 0;
+            }
+        }
+
+        if (attempt_.targetLocked)
+            attempt_.solution = attempt_.lockedSolution;
+        else if (attempt_.everHadSolution)
+            attempt_.solution = attempt_.lastValidSolution;
+        else
+            attempt_.solution = live;
     }
 
-    const float distanceNow = length(ball.GetLocation() - car.GetLocation());
-    attempt_.closestDistance = std::min(attempt_.closestDistance, distanceNow);
+    attempt_.closestDistance = std::min(
+        attempt_.closestDistance,
+        length(ball.GetLocation() - car.GetLocation()));
 
-    if (!attempt_.solution.valid)
+    if (!attempt_.everHadSolution)
     {
-        attempt_.headline = objectiveName(attempt_.objective) + " | NO INTERCEPT AT TARGET HEIGHT";
+        if (!attempt_.allowUnreachable && now >= attempt_.validationDeadline)
+        {
+            ++attempt_.rejectedSetups;
+
+            if (attempt_.rejectedSetups < getInt("tc_max_setup_rejections"))
+            {
+                attempt_.headline = "REROLLING UNREACHABLE SETUP";
+                requestNewScenario();
+                return;
+            }
+
+            attempt_.allowUnreachable = true;
+            attempt_.headline = "UNREACHABLE SETUP | REJECTION LIMIT";
+            return;
+        }
+
+        attempt_.headline =
+            attempt_.allowUnreachable
+            ? objectiveName(attempt_.objective) + " | MAY BE IMPOSSIBLE"
+            : objectiveName(attempt_.objective) + " | CHECKING";
         return;
     }
 
-    const float greenEarly = getFloat("tc_timing_green_early_ms") / 1000.0f;
-    const float greenLate = getFloat("tc_timing_green_late_ms") / 1000.0f;
+    const float early = getFloat("tc_timing_green_early_ms") / 1000.0f;
+    const float late = getFloat("tc_timing_green_late_ms") / 1000.0f;
 
-    if (attempt_.solution.jumpDelay > greenEarly)
+    if (attempt_.solution.jumpDelay > early)
         attempt_.headline = objectiveName(attempt_.objective) + " | WAIT";
-    else if (attempt_.solution.jumpDelay >= -greenLate)
+    else if (attempt_.solution.jumpDelay >= -late)
         attempt_.headline = objectiveName(attempt_.objective) + " | JUMP NOW";
     else
         attempt_.headline = objectiveName(attempt_.objective) + " | LATE";
@@ -523,13 +582,13 @@ void TakeoffCoach::finishAttempt(
     std::ostringstream detail;
     detail << "Timing ";
 
-    if (timing < 9000.0f)
+    if (attempt_.everHadSolution && timing < 9000.0f)
         detail << (timing >= 0.0f ? "+" : "") << format0(timing) << " ms";
     else
         detail << "n/a";
 
     detail << " | Aim ";
-    if (alignment < 9000.0f)
+    if (attempt_.everHadSolution && alignment < 9000.0f)
         detail << format1(attempt_.alignmentErrorDeg) << " deg";
     else
         detail << "n/a";
@@ -561,7 +620,9 @@ TakeoffCoach::Solution TakeoffCoach::solve(
     const float verticalCalibration = getFloat("tc_vertical_calibration");
     const float tolerance = getFloat("tc_position_tolerance");
 
-    float bestScore = -1.0e9f;
+    float bestHeightError = 1.0e9f;
+    float bestJumpDelay = -1.0e9f;
+    float bestAlignmentAbs = 1.0e9f;
 
     for (float contactDelay = minContact;
          contactDelay <= maxContact;
@@ -673,20 +734,41 @@ TakeoffCoach::Solution TakeoffCoach::solve(
         const float alignment =
             signedAngleDeg2D(travelDirection, requiredDirection);
 
-        float score = jumpDelay * 1000.0f + confidence * 180.0f;
+        float targetHeightMin = getFloat("tc_target_height_min");
+        float targetHeightMax = getFloat("tc_target_height_max");
 
-        if (attempt_.objective == Objective::Fast)
-            score += carSpeed * 0.15f;
-        else if (attempt_.objective == Objective::Control)
-            score -= std::abs(carSpeed - length2D(ballVelocity)) * 0.08f;
-        else if (attempt_.objective == Objective::Score)
-            score += 100.0f;
+        if (targetHeightMin > targetHeightMax)
+            std::swap(targetHeightMin, targetHeightMax);
 
-        score -= std::abs(alignment) * 10.0f;
+        const float perfectHeight =
+            0.5f * (targetHeightMin + targetHeightMax);
 
-        if (score > bestScore)
+        const float heightError =
+            std::abs(predictedBall.Z - perfectHeight);
+
+        const float alignmentAbs = std::abs(alignment);
+
+        const bool betterHeight =
+            heightError < bestHeightError - 0.5f;
+
+        const bool sameHeight =
+            std::abs(heightError - bestHeightError) <= 0.5f;
+
+        const bool betterTiming =
+            sameHeight && jumpDelay > bestJumpDelay + 0.001f;
+
+        const bool sameTiming =
+            sameHeight && std::abs(jumpDelay - bestJumpDelay) <= 0.001f;
+
+        const bool betterAlignment =
+            sameTiming && alignmentAbs < bestAlignmentAbs;
+
+        if (betterHeight || betterTiming || betterAlignment)
         {
-            bestScore = score;
+            bestHeightError = heightError;
+            bestJumpDelay = jumpDelay;
+            bestAlignmentAbs = alignmentAbs;
+
             best.valid = true;
             best.jumpDelay = jumpDelay;
             best.idealJumpAbsolute = now + jumpDelay;
@@ -695,6 +777,7 @@ TakeoffCoach::Solution TakeoffCoach::solve(
             best.alignmentErrorDeg = alignment;
             best.contactPoint = predictedBall;
             best.requiredDirection = requiredDirection;
+        }
         }
     }
 
@@ -723,7 +806,6 @@ void TakeoffCoach::renderHud(CanvasWrapper canvas)
     const bool feedback = attempt_.phase == Phase::Feedback;
 
     Vector2 origin;
-
     if (placement == 1)
         origin = Vector2{25, 120};
     else if (placement == 2)
@@ -743,183 +825,90 @@ void TakeoffCoach::renderHud(CanvasWrapper canvas)
     canvas.SetPosition(Vector2{origin.X + 16, origin.Y + 10});
     canvas.DrawString(attempt_.headline, 1.42f, 1.42f, true);
 
-    auto mapAsymmetric = [](float value,
-                            float greenNegative,
-                            float greenPositive,
-                            float yellowNegative,
-                            float yellowPositive,
-                            float displayNegative,
-                            float displayPositive)
-    {
-        if (value < 0.0f)
-        {
-            const float magnitude = -value;
-
-            if (magnitude <= greenNegative)
-                return -0.16f * magnitude / std::max(1.0f, greenNegative);
-
-            if (magnitude <= yellowNegative)
-            {
-                const float t = (magnitude - greenNegative)
-                    / std::max(1.0f, yellowNegative - greenNegative);
-                return -(0.16f + 0.44f * t);
-            }
-
-            const float t = (magnitude - yellowNegative)
-                / std::max(1.0f, displayNegative - yellowNegative);
-            return -(0.60f + 0.40f * clamp(t, 0.0f, 1.0f));
-        }
-
-        if (value <= greenPositive)
-            return 0.16f * value / std::max(1.0f, greenPositive);
-
-        if (value <= yellowPositive)
-        {
-            const float t = (value - greenPositive)
-                / std::max(1.0f, yellowPositive - greenPositive);
-            return 0.16f + 0.44f * t;
-        }
-
-        const float t = (value - yellowPositive)
-            / std::max(1.0f, displayPositive - yellowPositive);
-        return 0.60f + 0.40f * clamp(t, 0.0f, 1.0f);
-    };
+    const Solution displayed =
+        attempt_.targetLocked ? attempt_.lockedSolution :
+        (attempt_.everHadSolution ? attempt_.lastValidSolution : attempt_.solution);
 
     const float timingMs = feedback
         ? attempt_.timingErrorMs
-        : (attempt_.solution.valid
-            ? -attempt_.solution.jumpDelay * 1000.0f
-            : getFloat("tc_timing_display_late_ms"));
-
-    const float timingNorm = mapAsymmetric(
-        timingMs,
-        getFloat("tc_timing_green_early_ms"),
-        getFloat("tc_timing_green_late_ms"),
-        getFloat("tc_timing_yellow_early_ms"),
-        getFloat("tc_timing_yellow_late_ms"),
-        getFloat("tc_timing_display_early_ms"),
-        getFloat("tc_timing_display_late_ms"));
+        : (displayed.valid ? -displayed.jumpDelay * 1000.0f
+                           : getFloat("tc_timing_display_late_ms"));
 
     const float alignment = feedback
         ? attempt_.alignmentErrorDeg
-        : (attempt_.solution.valid
-            ? attempt_.solution.alignmentErrorDeg
-            : getFloat("tc_alignment_display"));
-
-    const float alignmentAbs = std::abs(alignment);
-    const float alignmentSign = alignment < 0.0f ? -1.0f : 1.0f;
-    float alignmentNormMagnitude = 0.0f;
-
-    if (alignmentAbs <= getFloat("tc_green_alignment"))
-    {
-        alignmentNormMagnitude =
-            0.16f * alignmentAbs
-            / std::max(0.1f, getFloat("tc_green_alignment"));
-    }
-    else if (alignmentAbs <= getFloat("tc_yellow_alignment"))
-    {
-        const float t =
-            (alignmentAbs - getFloat("tc_green_alignment"))
-            / std::max(
-                0.1f,
-                getFloat("tc_yellow_alignment")
-                    - getFloat("tc_green_alignment"));
-
-        alignmentNormMagnitude = 0.16f + 0.44f * t;
-    }
-    else
-    {
-        const float t =
-            (alignmentAbs - getFloat("tc_yellow_alignment"))
-            / std::max(
-                0.1f,
-                getFloat("tc_alignment_display")
-                    - getFloat("tc_yellow_alignment"));
-
-        alignmentNormMagnitude =
-            0.60f + 0.40f * clamp(t, 0.0f, 1.0f);
-    }
-
-    const float alignmentNorm =
-        alignmentSign * alignmentNormMagnitude;
+        : (displayed.valid ? displayed.alignmentErrorDeg
+                           : getFloat("tc_alignment_display"));
 
     float targetMin = getFloat("tc_target_height_min");
     float targetMax = getFloat("tc_target_height_max");
-
     if (targetMin > targetMax)
         std::swap(targetMin, targetMax);
 
+    const float center = 0.5f * (targetMin + targetMax);
+    const float halfGreen = std::max(1.0f, 0.5f * (targetMax - targetMin));
     const float actualHeight = feedback
         ? attempt_.contactHeight
-        : (attempt_.solution.valid
-            ? attempt_.solution.contactPoint.Z
-            : targetMin - getFloat("tc_height_display_margin"));
+        : (displayed.valid ? displayed.contactPoint.Z : center);
+    const float heightError = actualHeight - center;
 
-    const float targetCenter = 0.5f * (targetMin + targetMax);
-    const float halfGreen = std::max(1.0f, 0.5f * (targetMax - targetMin));
-    const float heightError = actualHeight - targetCenter;
-
-    const float heightNorm = mapAsymmetric(
-        heightError,
-        halfGreen,
-        halfGreen,
-        halfGreen + getFloat("tc_height_yellow_margin"),
-        halfGreen + getFloat("tc_height_yellow_margin"),
-        halfGreen + getFloat("tc_height_display_margin"),
-        halfGreen + getFloat("tc_height_display_margin"));
-
-    int gaugeIndex = 0;
-
-    auto gaugeOrigin = [&](int index)
+    int index = 0;
+    auto gaugeOrigin = [&](int i)
     {
-        if (placement == 0)
-            return Vector2{origin.X + 16 + index * 294, origin.Y + 72};
-
-        return Vector2{origin.X + 16, origin.Y + 72 + index * 64};
+        return placement == 0
+            ? Vector2{origin.X + 16 + i * 294, origin.Y + 72}
+            : Vector2{origin.X + 16, origin.Y + 72 + i * 64};
     };
 
     if (getBool("tc_show_timing"))
     {
         drawGauge(
-            canvas,
-            gaugeOrigin(gaugeIndex++),
-            "TIMING",
-            format0(timingMs) + " ms",
-            timingNorm,
-            true);
+            canvas, gaugeOrigin(index++), "TIMING",
+            feedback && !attempt_.everHadSolution ? "n/a" : format0(timingMs) + " ms",
+            timingMs,
+            getFloat("tc_timing_green_early_ms"),
+            getFloat("tc_timing_green_late_ms"),
+            getFloat("tc_timing_yellow_early_ms"),
+            getFloat("tc_timing_yellow_late_ms"),
+            getFloat("tc_timing_display_early_ms"),
+            getFloat("tc_timing_display_late_ms"));
     }
 
     if (getBool("tc_show_alignment"))
     {
         drawGauge(
-            canvas,
-            gaugeOrigin(gaugeIndex++),
-            "ALIGN",
-            format1(alignment) + " deg",
-            alignmentNorm,
-            true);
+            canvas, gaugeOrigin(index++), "ALIGN",
+            feedback && !attempt_.everHadSolution ? "n/a" : format1(alignment) + " deg",
+            alignment,
+            getFloat("tc_green_alignment"),
+            getFloat("tc_green_alignment"),
+            getFloat("tc_yellow_alignment"),
+            getFloat("tc_yellow_alignment"),
+            getFloat("tc_alignment_display"),
+            getFloat("tc_alignment_display"));
     }
 
     if (getBool("tc_show_height"))
     {
         drawGauge(
-            canvas,
-            gaugeOrigin(gaugeIndex++),
-            "HEIGHT",
+            canvas, gaugeOrigin(index++), "HEIGHT",
             format0(actualHeight) + " uu",
-            heightNorm,
-            true);
+            heightError,
+            halfGreen,
+            halfGreen,
+            halfGreen + getFloat("tc_height_yellow_margin"),
+            halfGreen + getFloat("tc_height_yellow_margin"),
+            halfGreen + getFloat("tc_height_display_margin"),
+            halfGreen + getFloat("tc_height_display_margin"));
     }
 
     if (feedback)
     {
         const int textY = placement == 0
             ? origin.Y + 142
-            : origin.Y + 72 + gaugeIndex * 64 + 8;
+            : origin.Y + 72 + index * 64 + 8;
 
         canvas.SetPosition(Vector2{origin.X + 16, textY});
         canvas.DrawString(attempt_.detail, 1.02f, 1.02f, true);
-
         canvas.SetPosition(Vector2{origin.X + 16, textY + 30});
         canvas.DrawString(attempt_.correction, 1.08f, 1.08f, true);
     }
@@ -931,56 +920,51 @@ void TakeoffCoach::drawGauge(
     CanvasWrapper& canvas,
     Vector2 origin,
     const std::string& label,
-    const std::string& value,
-    float normalized,
-    bool centered)
+    const std::string& valueText,
+    float value,
+    float greenNegative,
+    float greenPositive,
+    float yellowNegative,
+    float yellowPositive,
+    float displayNegative,
+    float displayPositive)
 {
     const int width = 270;
     const int height = 22;
 
-    if (centered)
+    greenNegative = clamp(greenNegative, 0.0f, displayNegative);
+    greenPositive = clamp(greenPositive, 0.0f, displayPositive);
+    yellowNegative = clamp(yellowNegative, greenNegative, displayNegative);
+    yellowPositive = clamp(yellowPositive, greenPositive, displayPositive);
+
+    const float total = std::max(1.0f, displayNegative + displayPositive);
+
+    auto xFor = [&](float numeric)
     {
-        setColor(canvas, 200, 55, 55, 240);
-        canvas.SetPosition(origin);
-        canvas.FillBox(Vector2{54, height});
+        const float clamped = clamp(numeric, -displayNegative, displayPositive);
+        const float fraction = (clamped + displayNegative) / total;
+        return origin.X + static_cast<int>(fraction * static_cast<float>(width));
+    };
 
-        setColor(canvas, 235, 175, 45, 240);
-        canvas.SetPosition(Vector2{origin.X + 54, origin.Y});
-        canvas.FillBox(Vector2{58, height});
-
-        setColor(canvas, 55, 195, 95, 248);
-        canvas.SetPosition(Vector2{origin.X + 112, origin.Y});
-        canvas.FillBox(Vector2{46, height});
-
-        setColor(canvas, 235, 175, 45, 240);
-        canvas.SetPosition(Vector2{origin.X + 158, origin.Y});
-        canvas.FillBox(Vector2{58, height});
-
-        setColor(canvas, 200, 55, 55, 240);
-        canvas.SetPosition(Vector2{origin.X + 216, origin.Y});
-        canvas.FillBox(Vector2{54, height});
-    }
-    else
+    auto segment = [&](float from, float to, int r, int g, int b)
     {
-        setColor(canvas, 200, 55, 55, 240);
-        canvas.SetPosition(origin);
-        canvas.FillBox(Vector2{90, height});
+        const int x1 = xFor(from);
+        const int x2 = xFor(to);
+        setColor(canvas, r, g, b, 242);
+        canvas.SetPosition(Vector2{x1, origin.Y});
+        canvas.FillBox(Vector2{std::max(1, x2 - x1), height});
+    };
 
-        setColor(canvas, 235, 175, 45, 240);
-        canvas.SetPosition(Vector2{origin.X + 90, origin.Y});
-        canvas.FillBox(Vector2{90, height});
+    segment(-displayNegative, -yellowNegative, 200, 55, 55);
+    segment(-yellowNegative, -greenNegative, 235, 175, 45);
+    segment(-greenNegative, greenPositive, 55, 195, 95);
+    segment(greenPositive, yellowPositive, 235, 175, 45);
+    segment(yellowPositive, displayPositive, 200, 55, 55);
 
-        setColor(canvas, 55, 195, 95, 248);
-        canvas.SetPosition(Vector2{origin.X + 180, origin.Y});
-        canvas.FillBox(Vector2{90, height});
-    }
-
-    const float marker01 = centered
-        ? clamp((normalized + 1.0f) * 0.5f, 0.02f, 0.98f)
-        : clamp(normalized, 0.02f, 0.98f);
-
-    const int markerX =
-        origin.X + static_cast<int>(marker01 * static_cast<float>(width));
+    const int markerX = static_cast<int>(clamp(
+        static_cast<float>(xFor(value)),
+        static_cast<float>(origin.X + 4),
+        static_cast<float>(origin.X + width - 4)));
 
     setColor(canvas, 255, 255, 255, 255);
     canvas.FillTriangle(
@@ -991,10 +975,8 @@ void TakeoffCoach::drawGauge(
     const float textScale = getFloat("tc_indicator_text_scale");
     canvas.SetPosition(Vector2{origin.X, origin.Y + 27});
     canvas.DrawString(
-        getBool("tc_show_numbers") ? label + "  " + value : label,
-        textScale,
-        textScale,
-        true);
+        getBool("tc_show_numbers") ? label + "  " + valueText : label,
+        textScale, textScale, true);
 }
 
 void TakeoffCoach::RenderSettings()
@@ -1043,6 +1025,17 @@ void TakeoffCoach::renderDrillTab()
     if (ImGui::Checkbox("Automatically start the next attempt", &autoReset))
         setValue("tc_auto_reset", autoReset);
 
+    float impossibleChance = getFloat("tc_unreachable_setup_chance");
+    if (ImGui::SliderFloat(
+            "Intentionally unreachable setup chance",
+            &impossibleChance,
+            0.0f,
+            100.0f,
+            "%.0f%%"))
+    {
+        setValue("tc_unreachable_setup_chance", impossibleChance);
+    }
+
     float feedbackSeconds = getFloat("tc_feedback_seconds");
     if (ImGui::SliderFloat(
             "Result duration",
@@ -1068,11 +1061,12 @@ void TakeoffCoach::renderSetupTab()
     ImGui::Text("POSITION");
 
     rangeControl("Approach distance", "tc_distance_min", "tc_distance_max",
-        1200.0f, 6000.0f, "%.0f uu");
+        -1800.0f, 6000.0f, "%.0f uu");
+    ImGui::TextWrapped("Negative allows the ball to start behind the car; zero allows overhead setups.");
     rangeControl("Lateral offset", "tc_lateral_min", "tc_lateral_max",
         -2200.0f, 2200.0f, "%.0f uu");
     rangeControl("Ball height", "tc_ball_height_min", "tc_ball_height_max",
-        120.0f, 1400.0f, "%.0f uu");
+        120.0f, 1700.0f, "%.0f uu");
     rangeControl("Target contact height", "tc_target_height_min", "tc_target_height_max",
         120.0f, 1700.0f, "%.0f uu");
     ImGui::TextWrapped(
