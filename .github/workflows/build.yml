@@ -1,0 +1,48 @@
+name: Build TakeoffCoach
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Download plugin source
+        uses: actions/checkout@v4
+
+      - name: Download BakkesMod SDK
+        uses: actions/checkout@v4
+        with:
+          repository: bakkesmodorg/BakkesModSDK
+          path: BakkesModSDK
+
+      - name: Enable 32-bit MSVC compiler
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Compile DLL
+        shell: cmd
+        run: |
+          mkdir build
+          cl /nologo /std:c++17 /EHsc /LD /MD ^
+            /I"BakkesModSDK\include" ^
+            TakeoffCoach.cpp ^
+            /link ^
+            /LIBPATH:"BakkesModSDK\lib" ^
+            bakkesmod.lib ^
+            /OUT:"build\TakeoffCoach.dll"
+
+      - name: Copy config
+        shell: cmd
+        run: copy takeoffcoach.cfg build\takeoffcoach.cfg
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: TakeoffCoach
+          path: build
