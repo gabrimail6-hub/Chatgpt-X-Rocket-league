@@ -343,14 +343,14 @@ void TakeoffCoach::render(CanvasWrapper canvas)
     if (!gameWrapper->IsInFreeplay())
         return;
 
-    canvas.SetPosition(Vector2{40, 110});
+    canvas.SetPosition(Vector2{static_cast<int>(40), static_cast<int>(110)});
     canvas.DrawString(
         "TAKEOFF COACH",
         2.0f,
         2.0f,
         true);
 
-    canvas.SetPosition(Vector2{40, 145});
+    canvas.SetPosition(Vector2{static_cast<int>(40), static_cast<int>(145)});
     canvas.DrawString(
         attempt_.feedback,
         1.35f,
@@ -379,7 +379,7 @@ void TakeoffCoach::render(CanvasWrapper canvas)
                  << "   Speed: " << std::fixed << std::setprecision(0)
                  << speed << " / " << attempt_.targetSpeed;
 
-            canvas.SetPosition(Vector2{40, 172});
+            canvas.SetPosition(Vector2{static_cast<int>(40), static_cast<int>(172)});
             canvas.DrawString(live.str(), 1.1f, 1.1f, false);
         }
     }
