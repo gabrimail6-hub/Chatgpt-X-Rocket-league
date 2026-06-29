@@ -91,6 +91,7 @@ private:
         float previousBallSpeed = 0.0f;
         float contactHeight = 0.0f;
         float validationDeadline = 0.0f;
+        float lockedContactAbsolute = 0.0f;
         int rejectedSetups = 0;
 
         std::string headline = "Open settings and start a drill.";
@@ -115,6 +116,7 @@ private:
     void finishAttempt(CarWrapper car, BallWrapper ball, bool touched, bool scored, float now);
 
     Solution solve(CarWrapper car, BallWrapper ball, float now) const;
+    Solution solveLockedTarget(CarWrapper car, float now) const;
     Vector predictBallPosition(Vector position, Vector velocity, float t) const;
 
     void renderHud(CanvasWrapper canvas);

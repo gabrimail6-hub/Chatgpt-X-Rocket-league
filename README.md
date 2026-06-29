@@ -30,3 +30,5 @@ The reach calculation is a configurable training model, not a perfect Rocket Lea
 <!-- Takeoff Coach 3.3: 2026-06-29 20:31:20 UTC -->
 
 <!-- Takeoff Coach 3.3.1 solver repair: 2026-06-29 20:35:25 UTC -->
+
+<!-- Takeoff Coach 3.3.2 live locked-target guidance: 2026-06-29 20:52:23 UTC -->
