@@ -12,7 +12,7 @@
 BAKKESMOD_PLUGIN(
     TakeoffCoach,
     "Takeoff Coach",
-    "3.3.3",
+    "3.3.4",
     PLUGINTYPE_FREEPLAY
 )
 
@@ -59,7 +59,7 @@ void TakeoffCoach::onLoad()
             renderHud(canvas);
         });
 
-    cvarManager->log("Takeoff Coach 3.3.3 loaded.");
+    cvarManager->log("Takeoff Coach 3.3.4 loaded.");
 }
 
 void TakeoffCoach::onUnload()
@@ -111,6 +111,7 @@ void TakeoffCoach::registerCvars()
     reg("tc_unreachable_setup_chance", "15", 0.0f, 100.0f);
     reg("tc_setup_validation_delay", "0.35", 0.10f, 1.50f);
     reg("tc_max_setup_rejections", "100", 1.0f, 500.0f);
+    reg("tc_min_initial_jump_delay_ms", "250", 0.0f, 1500.0f);
 
     // Desired ball-centre height at contact. Standard Soccar crossbar height
     // is approximately 642.775 uu, so the default band surrounds it.
@@ -734,6 +735,13 @@ TakeoffCoach::Solution TakeoffCoach::solve(
                 ballVelocity,
                 contactDelay);
 
+        const float predictedVerticalVelocity =
+            ballVelocity.Z + GRAVITY_Z * contactDelay;
+
+        // Use only the descending crossing of the target-height band.
+        if (predictedVerticalVelocity >= 0.0f)
+            continue;
+
         if (predictedBall.Z < SAFE_FLOOR
             || predictedBall.Z > SAFE_CEILING
             || std::abs(predictedBall.X) > SAFE_X
@@ -860,7 +868,11 @@ TakeoffCoach::Solution TakeoffCoach::solve(
         const float jumpDelay =
             contactDelay - requiredDuration;
 
-        if (jumpDelay < -0.05f)
+        const float minimumJumpDelay =
+            getFloat("tc_min_initial_jump_delay_ms")
+            / 1000.0f;
+
+        if (jumpDelay < minimumJumpDelay)
             continue;
 
         const Vector requiredDirection =
@@ -1519,6 +1531,25 @@ void TakeoffCoach::renderDrillTab()
     {
         setValue("tc_unreachable_setup_chance", impossibleChance);
     }
+
+    float minimumTiming =
+        getFloat("tc_min_initial_jump_delay_ms");
+
+    if (ImGui::SliderFloat(
+            "Minimum initial jump timing",
+            &minimumTiming,
+            0.0f,
+            1500.0f,
+            "%.0f ms"))
+    {
+        setValue(
+            "tc_min_initial_jump_delay_ms",
+            minimumTiming);
+    }
+
+    ImGui::TextWrapped(
+        "A generated setup is rerolled when its first valid descending-height "
+        "interception requires jumping sooner than this.");
 
     float feedbackSeconds = getFloat("tc_feedback_seconds");
     if (ImGui::SliderFloat(
