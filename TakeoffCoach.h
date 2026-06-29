@@ -71,6 +71,7 @@ private:
         Scenario scenario{};
         Solution solution{};
         Solution lockedSolution{};
+        Solution validationCandidate{};
         Solution lastValidSolution{};
         Solution jumpSolution{};
 
@@ -93,6 +94,7 @@ private:
         Vector previousBallVelocity{};
         float contactHeight = 0.0f;
         float validationDeadline = 0.0f;
+        float validationStableSince = 0.0f;
         float lockedContactAbsolute = 0.0f;
         int rejectedSetups = 0;
 

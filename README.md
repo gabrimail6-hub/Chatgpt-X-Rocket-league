@@ -38,3 +38,5 @@ The reach calculation is a configurable training model, not a perfect Rocket Lea
 <!-- Takeoff Coach 3.3.4 descending-only target and minimum timing: 2026-06-29 22:19:56 UTC -->
 
 <!-- Takeoff Coach 3.3.5 strict initial timing, direct live angle, bounce invalidation, target marker: 2026-06-29 22:41:55 UTC -->
+
+<!-- Takeoff Coach 3.4.0 Apex Lock: verified pre-bounce target: 2026-06-29 23:02:19 UTC -->

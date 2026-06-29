@@ -12,7 +12,7 @@
 BAKKESMOD_PLUGIN(
     TakeoffCoach,
     "Takeoff Coach",
-    "3.3.5",
+    "3.4.0 Apex Lock",
     PLUGINTYPE_FREEPLAY
 )
 
@@ -59,7 +59,7 @@ void TakeoffCoach::onLoad()
             renderHud(canvas);
         });
 
-    cvarManager->log("Takeoff Coach 3.3.5 loaded.");
+    cvarManager->log("Takeoff Coach 3.4.0 Apex Lock loaded.");
 }
 
 void TakeoffCoach::onUnload()
@@ -109,7 +109,8 @@ void TakeoffCoach::registerCvars()
     reg("tc_position_tolerance", "150", 80.0f, 300.0f);
     reg("tc_control_target", "700", 200.0f, 1600.0f);
     reg("tc_unreachable_setup_chance", "15", 0.0f, 100.0f);
-    reg("tc_setup_validation_delay", "0.35", 0.10f, 1.50f);
+    reg("tc_setup_validation_delay", "0.90", 0.20f, 2.50f);
+    reg("tc_validation_stable_time", "0.35", 0.10f, 1.50f);
     reg("tc_max_setup_rejections", "100", 1.0f, 500.0f);
     reg("tc_min_initial_jump_delay_ms", "250", 0.0f, 1500.0f);
 
@@ -151,6 +152,9 @@ void TakeoffCoach::registerCvars()
     reg("tc_color_green_g", "255", 0.0f, 255.0f);
     reg("tc_color_green_b", "67", 0.0f, 255.0f);
     reg("tc_show_contact_marker", "1", 0.0f, 1.0f);
+    reg("tc_marker_color_r", "255", 0.0f, 255.0f);
+    reg("tc_marker_color_g", "255", 0.0f, 255.0f);
+    reg("tc_marker_color_b", "255", 0.0f, 255.0f);
 
     constexpr unsigned char permission = PERMISSION_FREEPLAY;
 
@@ -227,6 +231,7 @@ void TakeoffCoach::startScenarioNow(uint64_t generation)
     attempt_.scenario = scenario;
     attempt_.solution = Solution{};
     attempt_.lockedSolution = Solution{};
+    attempt_.validationCandidate = Solution{};
     attempt_.lastValidSolution = Solution{};
     attempt_.jumpSolution = Solution{};
     attempt_.previousJump = false;
@@ -481,39 +486,112 @@ void TakeoffCoach::updateReading(
 
         if (!attempt_.targetLocked)
         {
-            const Solution initialSolution =
+            const Solution candidate =
                 solve(car, ball, now);
 
             const float minimumInitialDelay =
                 getFloat("tc_min_initial_jump_delay_ms")
                 / 1000.0f;
 
-            if (initialSolution.valid
-                && initialSolution.jumpDelay >= minimumInitialDelay)
+            const bool candidateUsable =
+                candidate.valid
+                && candidate.jumpDelay >= minimumInitialDelay;
+
+            if (candidateUsable)
             {
-                attempt_.lockedSolution =
-                    initialSolution;
+                bool stableWithPrevious = false;
 
-                attempt_.lastValidSolution =
-                    initialSolution;
+                if (attempt_.validationCandidate.valid)
+                {
+                    const float pointDrift =
+                        length(
+                            candidate.contactPoint
+                            - attempt_.validationCandidate.contactPoint);
 
-                attempt_.solution =
-                    initialSolution;
+                    const float timeDrift =
+                        std::abs(
+                            candidate.idealJumpAbsolute
+                            - attempt_.validationCandidate.idealJumpAbsolute);
 
-                attempt_.everHadSolution = true;
-                attempt_.targetLocked = true;
+                    stableWithPrevious =
+                        pointDrift <= 90.0f
+                        && timeDrift <= 0.08f;
+                }
 
-                attempt_.lockedContactAbsolute =
-                    now + initialSolution.contactDelay;
+                if (!attempt_.validationCandidate.valid
+                    || !stableWithPrevious)
+                {
+                    attempt_.validationStableSince = now;
+                }
 
-                attempt_.rejectedSetups = 0;
-                consecutiveRerolls_ = 0;
+                attempt_.validationCandidate = candidate;
+                attempt_.solution = candidate;
+
+                const bool stableLongEnough =
+                    now - attempt_.validationStableSince
+                    >= getFloat("tc_validation_stable_time");
+
+                const bool verificationWindowComplete =
+                    now >= attempt_.validationDeadline;
+
+                if (stableLongEnough
+                    && verificationWindowComplete)
+                {
+                    attempt_.lockedSolution = candidate;
+                    attempt_.lastValidSolution = candidate;
+                    attempt_.solution = candidate;
+                    attempt_.everHadSolution = true;
+                    attempt_.targetLocked = true;
+
+                    attempt_.lockedContactAbsolute =
+                        now + candidate.contactDelay;
+
+                    attempt_.rejectedSetups = 0;
+                    consecutiveRerolls_ = 0;
+                }
+            }
+            else
+            {
+                attempt_.validationCandidate = Solution{};
+                attempt_.validationStableSince = now;
+            }
+
+            if (!attempt_.targetLocked
+                && now >= attempt_.validationDeadline
+                + getFloat("tc_validation_stable_time"))
+            {
+                if (!attempt_.allowUnreachable)
+                {
+                    ++consecutiveRerolls_;
+
+                    const int hardLimit =
+                        getInt("tc_max_setup_rejections");
+
+                    if (consecutiveRerolls_ < hardLimit)
+                    {
+                        attempt_.phase = Phase::Idle;
+                        attempt_.headline =
+                            "REROLLING UNSTABLE OR UNREACHABLE SETUP";
+
+                        const uint64_t nextGeneration =
+                            ++attempt_.generation;
+
+                        gameWrapper->SetTimeout(
+                            [this, nextGeneration](GameWrapper*)
+                            {
+                                startScenarioNow(nextGeneration);
+                            },
+                            0.06f);
+
+                        return;
+                    }
+
+                    attempt_.allowUnreachable = true;
+                }
             }
         }
         else
         {
-            // This always returns live guidance, even when the
-            // ideal jump moment is already far in the past.
             const Solution liveGuidance =
                 solveLockedTarget(car, now);
 
@@ -531,48 +609,14 @@ void TakeoffCoach::updateReading(
             attempt_.closestDistance,
             distanceNow);
 
-    if (!attempt_.everHadSolution)
+    if (!attempt_.targetLocked)
     {
-        if (!attempt_.allowUnreachable
-            && now >= attempt_.validationDeadline)
-        {
-            ++consecutiveRerolls_;
-
-            const int hardLimit =
-                getInt("tc_max_setup_rejections");
-
-            if (consecutiveRerolls_ < hardLimit)
-            {
-                attempt_.phase = Phase::Idle;
-                attempt_.headline =
-                    "REROLLING UNREACHABLE SETUP";
-
-                const uint64_t nextGeneration =
-                    ++attempt_.generation;
-
-                gameWrapper->SetTimeout(
-                    [this, nextGeneration](GameWrapper*)
-                    {
-                        startScenarioNow(nextGeneration);
-                    },
-                    0.06f);
-
-                return;
-            }
-
-            attempt_.allowUnreachable = true;
-            attempt_.headline =
-                "UNREACHABLE SETUP | REROLL LIMIT REACHED";
-
-            return;
-        }
-
         attempt_.headline =
             attempt_.allowUnreachable
             ? objectiveName(attempt_.objective)
                 + " | READ: MAY BE IMPOSSIBLE"
             : objectiveName(attempt_.objective)
-                + " | CHECKING REACHABILITY";
+                + " | VERIFYING PATH";
 
         return;
     }
@@ -776,10 +820,26 @@ TakeoffCoach::Solution TakeoffCoach::solve(
     float bestJumpDelay = -1.0e9f;
     float bestAlignmentAbs = 1.0e9f;
 
+    float firstGroundImpactTime = maxContact + 1.0f;
+
+    for (float t = 0.0f; t <= maxContact; t += 1.0f / 120.0f)
+    {
+        const Vector predicted =
+            predictBallPosition(ballPosition, ballVelocity, t);
+
+        if (predicted.Z <= SAFE_FLOOR)
+        {
+            firstGroundImpactTime = t;
+            break;
+        }
+    }
+
     for (float contactDelay = minContact;
          contactDelay <= maxContact;
          contactDelay += 0.025f)
     {
+        if (contactDelay >= firstGroundImpactTime - 0.04f)
+            break;
         const Vector predictedBall =
             predictBallPosition(
                 ballPosition,
@@ -800,6 +860,36 @@ TakeoffCoach::Solution TakeoffCoach::solve(
         {
             continue;
         }
+
+        bool pathHitsNonGroundSurface = false;
+
+        for (float pathTime = 0.0f;
+             pathTime < contactDelay;
+             pathTime += 1.0f / 60.0f)
+        {
+            const Vector pathPoint =
+                predictBallPosition(
+                    ballPosition,
+                    ballVelocity,
+                    pathTime);
+
+            if (std::abs(pathPoint.X) > SAFE_X
+                || std::abs(pathPoint.Y) > SAFE_Y
+                || pathPoint.Z > SAFE_CEILING)
+            {
+                pathHitsNonGroundSurface = true;
+                break;
+            }
+
+            if (pathPoint.Z <= SAFE_FLOOR)
+            {
+                pathHitsNonGroundSurface = true;
+                break;
+            }
+        }
+
+        if (pathHitsNonGroundSurface)
+            continue;
 
         if (predictedBall.Z < targetHeightMin
             || predictedBall.Z > targetHeightMax)
@@ -1006,9 +1096,7 @@ TakeoffCoach::Solution TakeoffCoach::solveLockedTarget(
         length2D(carVelocity);
 
     const Vector travelDirection =
-        carSpeed > 80.0f
-        ? normalized2D(carVelocity)
-        : normalized2D(
+        normalized2D(
             forwardFromRotator(car.GetRotation()));
 
     const Vector fixedContactPoint =
@@ -1350,7 +1438,12 @@ void TakeoffCoach::renderHud(CanvasWrapper canvas)
             canvas.Project(
                 attempt_.lockedSolution.contactPoint);
 
-        setColor(canvas, 255, 255, 255, 245);
+        setColor(
+            canvas,
+            getInt("tc_marker_color_r"),
+            getInt("tc_marker_color_g"),
+            getInt("tc_marker_color_b"),
+            245);
 
         canvas.DrawLine(
             Vector2{marker.X - 18, marker.Y},
@@ -1628,6 +1721,36 @@ void TakeoffCoach::renderDrillTab()
         "A generated setup is rerolled when its first valid descending-height "
         "interception requires jumping sooner than this.");
 
+    float verificationDelay =
+        getFloat("tc_setup_validation_delay");
+
+    if (ImGui::SliderFloat(
+            "Path verification window",
+            &verificationDelay,
+            0.20f,
+            2.50f,
+            "%.2f s"))
+    {
+        setValue(
+            "tc_setup_validation_delay",
+            verificationDelay);
+    }
+
+    float stableTime =
+        getFloat("tc_validation_stable_time");
+
+    if (ImGui::SliderFloat(
+            "Required stable prediction time",
+            &stableTime,
+            0.10f,
+            1.50f,
+            "%.2f s"))
+    {
+        setValue(
+            "tc_validation_stable_time",
+            stableTime);
+    }
+
     float feedbackSeconds = getFloat("tc_feedback_seconds");
     if (ImGui::SliderFloat(
             "Result duration",
@@ -1718,6 +1841,28 @@ void TakeoffCoach::renderFeedbackTab()
         setValue(
             "tc_show_contact_marker",
             showContactMarker);
+    }
+
+    float markerColor[3] = {
+        getFloat("tc_marker_color_r") / 255.0f,
+        getFloat("tc_marker_color_g") / 255.0f,
+        getFloat("tc_marker_color_b") / 255.0f};
+
+    if (ImGui::ColorEdit3(
+            "Future marker color",
+            markerColor))
+    {
+        setValue(
+            "tc_marker_color_r",
+            markerColor[0] * 255.0f);
+
+        setValue(
+            "tc_marker_color_g",
+            markerColor[1] * 255.0f);
+
+        setValue(
+            "tc_marker_color_b",
+            markerColor[2] * 255.0f);
     }
 
     int placement = getInt("tc_hud_position");
