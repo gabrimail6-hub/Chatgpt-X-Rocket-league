@@ -22,3 +22,5 @@ A BakkesMod Freeplay plugin for training the latest viable fast-aerial takeoff.
 
 The reach calculation is a configurable training model, not a perfect Rocket League physics solver. Tune **How late to wait** and the boost-efficiency sliders until the JUMP NOW cue matches takeoffs that are barely reachable for your mechanics.
 
+
+<!-- V3 fixed rebuild: 2026-06-29 18:47:43 UTC -->
