@@ -100,6 +100,7 @@ private:
     };
 
     Attempt attempt_;
+    int consecutiveRerolls_ = 0;
     std::mt19937 rng_{std::random_device{}()};
 
     void registerCvars();

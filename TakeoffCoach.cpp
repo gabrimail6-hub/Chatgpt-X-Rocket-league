@@ -12,7 +12,7 @@
 BAKKESMOD_PLUGIN(
     TakeoffCoach,
     "Takeoff Coach",
-    "3.3.2",
+    "3.3.3",
     PLUGINTYPE_FREEPLAY
 )
 
@@ -59,7 +59,7 @@ void TakeoffCoach::onLoad()
             renderHud(canvas);
         });
 
-    cvarManager->log("Takeoff Coach 3.3.2 loaded.");
+    cvarManager->log("Takeoff Coach 3.3.3 loaded.");
 }
 
 void TakeoffCoach::onUnload()
@@ -208,6 +208,17 @@ void TakeoffCoach::startScenarioNow(uint64_t generation)
         attempt_.headline = "Could not generate a safe scenario.";
         return;
     }
+
+    const uint64_t appliedGeneration = generation;
+    const Scenario appliedScenario = scenario;
+
+    gameWrapper->SetTimeout(
+        [this, appliedGeneration, appliedScenario](GameWrapper*)
+        {
+            if (attempt_.generation == appliedGeneration)
+                applyScenario(appliedScenario);
+        },
+        0.04f);
 
     attempt_.phase = Phase::Reading;
     attempt_.objective = scenario.objective;
@@ -415,9 +426,13 @@ void TakeoffCoach::updateAttempt(CarWrapper car, float now)
     }
 }
 
-void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
+void TakeoffCoach::updateReading(
+    CarWrapper car,
+    BallWrapper ball,
+    float now)
 {
-    const float hz = std::max(5.0f, getFloat("tc_solver_hz"));
+    const float hz =
+        std::max(5.0f, getFloat("tc_solver_hz"));
 
     if (now - attempt_.lastSolveAt >= 1.0f / hz)
     {
@@ -425,36 +440,40 @@ void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
 
         if (!attempt_.targetLocked)
         {
-            const Solution initialSolution = solve(car, ball, now);
+            const Solution initialSolution =
+                solve(car, ball, now);
 
             if (initialSolution.valid)
             {
-                attempt_.lockedSolution = initialSolution;
-                attempt_.lastValidSolution = initialSolution;
-                attempt_.solution = initialSolution;
+                attempt_.lockedSolution =
+                    initialSolution;
+
+                attempt_.lastValidSolution =
+                    initialSolution;
+
+                attempt_.solution =
+                    initialSolution;
+
                 attempt_.everHadSolution = true;
                 attempt_.targetLocked = true;
+
                 attempt_.lockedContactAbsolute =
                     now + initialSolution.contactDelay;
+
                 attempt_.rejectedSetups = 0;
+                consecutiveRerolls_ = 0;
             }
         }
         else
         {
+            // This always returns live guidance, even when the
+            // ideal jump moment is already far in the past.
             const Solution liveGuidance =
                 solveLockedTarget(car, now);
 
-            if (liveGuidance.valid)
-            {
-                attempt_.solution = liveGuidance;
-                attempt_.lastValidSolution = liveGuidance;
-                attempt_.everHadSolution = true;
-            }
-            else if (attempt_.everHadSolution)
-            {
-                attempt_.solution =
-                    attempt_.lastValidSolution;
-            }
+            attempt_.solution = liveGuidance;
+            attempt_.lastValidSolution = liveGuidance;
+            attempt_.everHadSolution = true;
         }
     }
 
@@ -462,27 +481,43 @@ void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
         length(ball.GetLocation() - car.GetLocation());
 
     attempt_.closestDistance =
-        std::min(attempt_.closestDistance, distanceNow);
+        std::min(
+            attempt_.closestDistance,
+            distanceNow);
 
     if (!attempt_.everHadSolution)
     {
         if (!attempt_.allowUnreachable
             && now >= attempt_.validationDeadline)
         {
-            ++attempt_.rejectedSetups;
+            ++consecutiveRerolls_;
 
-            if (attempt_.rejectedSetups
-                < getInt("tc_max_setup_rejections"))
+            const int hardLimit =
+                getInt("tc_max_setup_rejections");
+
+            if (consecutiveRerolls_ < hardLimit)
             {
+                attempt_.phase = Phase::Idle;
                 attempt_.headline =
                     "REROLLING UNREACHABLE SETUP";
-                requestNewScenario();
+
+                const uint64_t nextGeneration =
+                    ++attempt_.generation;
+
+                gameWrapper->SetTimeout(
+                    [this, nextGeneration](GameWrapper*)
+                    {
+                        startScenarioNow(nextGeneration);
+                    },
+                    0.06f);
+
                 return;
             }
 
             attempt_.allowUnreachable = true;
             attempt_.headline =
-                "UNREACHABLE SETUP | REJECTION LIMIT REACHED";
+                "UNREACHABLE SETUP | REROLL LIMIT REACHED";
+
             return;
         }
 
@@ -497,25 +532,30 @@ void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
     }
 
     const float greenEarly =
-        getFloat("tc_timing_green_early_ms") / 1000.0f;
+        getFloat("tc_timing_green_early_ms")
+        / 1000.0f;
 
     const float greenLate =
-        getFloat("tc_timing_green_late_ms") / 1000.0f;
+        getFloat("tc_timing_green_late_ms")
+        / 1000.0f;
 
     if (attempt_.solution.jumpDelay > greenEarly)
     {
         attempt_.headline =
-            objectiveName(attempt_.objective) + " | WAIT";
+            objectiveName(attempt_.objective)
+            + " | WAIT";
     }
     else if (attempt_.solution.jumpDelay >= -greenLate)
     {
         attempt_.headline =
-            objectiveName(attempt_.objective) + " | JUMP NOW";
+            objectiveName(attempt_.objective)
+            + " | JUMP NOW";
     }
     else
     {
         attempt_.headline =
-            objectiveName(attempt_.objective) + " | LATE";
+            objectiveName(attempt_.objective)
+            + " | LATE";
     }
 }
 
@@ -820,6 +860,9 @@ TakeoffCoach::Solution TakeoffCoach::solve(
         const float jumpDelay =
             contactDelay - requiredDuration;
 
+        if (jumpDelay < -0.05f)
+            continue;
+
         const Vector requiredDirection =
             normalized2D(delta);
 
@@ -890,12 +933,6 @@ TakeoffCoach::Solution TakeoffCoach::solveLockedTarget(
     if (!attempt_.targetLocked)
         return live;
 
-    const float remainingTime =
-        attempt_.lockedContactAbsolute - now;
-
-    if (remainingTime <= 0.0f)
-        return live;
-
     const Vector carPosition =
         car.GetLocation();
 
@@ -946,11 +983,16 @@ TakeoffCoach::Solution TakeoffCoach::solveLockedTarget(
     const float tolerance =
         getFloat("tc_position_tolerance");
 
-    float requiredDuration = -1.0f;
+    // One consistent practical fast-aerial model.
+    // We search for the earliest duration this fixed profile can reach,
+    // without restricting it to the time remaining. Therefore the timer
+    // keeps getting more negative after the ideal jump moment.
+    float requiredDuration = 2.20f;
     float confidence = 0.0f;
+    bool reached = false;
 
     for (float duration = 0.34f;
-         duration <= std::min(2.0f, remainingTime + 0.2f);
+         duration <= 2.20f;
          duration += 1.0f / 120.0f)
     {
         const float horizontalReach =
@@ -980,6 +1022,7 @@ TakeoffCoach::Solution TakeoffCoach::solveLockedTarget(
             && verticalReach >= verticalNeed)
         {
             requiredDuration = duration;
+            reached = true;
 
             const float horizontalMargin =
                 (horizontalReach - horizontalNeed)
@@ -1000,22 +1043,33 @@ TakeoffCoach::Solution TakeoffCoach::solveLockedTarget(
         }
     }
 
-    if (requiredDuration < 0.0f)
-        return live;
+    // Even if the current position has become physically unrecoverable,
+    // keep displaying timing and angle until the player jumps.
+    if (!reached)
+        confidence = 0.0f;
 
     const Vector requiredDirection =
         normalized2D(delta);
 
     live.valid = true;
     live.contactPoint = fixedContactPoint;
-    live.contactDelay = remainingTime;
+    live.contactDelay =
+        attempt_.lockedContactAbsolute - now;
+
     live.jumpDelay =
-        remainingTime - requiredDuration;
+        attempt_.lockedContactAbsolute
+        - now
+        - requiredDuration;
+
     live.idealJumpAbsolute =
-        now + live.jumpDelay;
+        attempt_.lockedContactAbsolute
+        - requiredDuration;
+
     live.confidence = confidence;
+
     live.requiredDirection =
         requiredDirection;
+
     live.alignmentErrorDeg =
         signedAngleDeg2D(
             travelDirection,
