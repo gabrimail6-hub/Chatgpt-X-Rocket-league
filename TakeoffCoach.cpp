@@ -12,7 +12,7 @@
 BAKKESMOD_PLUGIN(
     TakeoffCoach,
     "Takeoff Coach",
-    "5.7.0 Reach + Bounce Fix",
+    "5.8.0 Live Takeoff",
     PLUGINTYPE_FREEPLAY
 )
 
@@ -50,18 +50,28 @@ namespace
             canvas.FillBox(size);
             return;
         }
-        canvas.SetPosition(Vector2{origin.X + radius, origin.Y});
-        canvas.FillBox(Vector2{size.X - 2 * radius, size.Y});
-        canvas.SetPosition(Vector2{origin.X, origin.Y + radius});
-        canvas.FillBox(Vector2{size.X, size.Y - 2 * radius});
-        for (int y = 0; y < radius; ++y)
+
+        // Draw every pixel row exactly once. The previous implementation layered
+        // two large rectangles and corner strips, so alpha blending made the
+        // overlap visibly darker.
+        for (int y = 0; y < size.Y; ++y)
         {
-            const float dy = static_cast<float>(radius - y) - 0.5f;
-            const int inset = static_cast<int>(std::ceil(radius - std::sqrt(std::max(0.0f, radius * radius - dy * dy))));
-            const int rowWidth = size.X - 2 * inset;
+            int inset = 0;
+            if (y < radius)
+            {
+                const float dy = static_cast<float>(radius - y) - 0.5f;
+                inset = static_cast<int>(std::ceil(
+                    radius - std::sqrt(std::max(0.0f, radius * radius - dy * dy))));
+            }
+            else if (y >= size.Y - radius)
+            {
+                const float dy = static_cast<float>(y - (size.Y - radius)) + 0.5f;
+                inset = static_cast<int>(std::ceil(
+                    radius - std::sqrt(std::max(0.0f, radius * radius - dy * dy))));
+            }
+
+            const int rowWidth = std::max(1, size.X - 2 * inset);
             canvas.SetPosition(Vector2{origin.X + inset, origin.Y + y});
-            canvas.FillBox(Vector2{rowWidth, 1});
-            canvas.SetPosition(Vector2{origin.X + inset, origin.Y + size.Y - 1 - y});
             canvas.FillBox(Vector2{rowWidth, 1});
         }
     }
@@ -91,7 +101,7 @@ void TakeoffCoach::onLoad()
             renderHud(canvas);
         });
 
-    cvarManager->log("Takeoff Coach 5.7.0 Reach + Bounce Fix loaded.");
+    cvarManager->log("Takeoff Coach 5.8.0 Live Takeoff loaded.");
 }
 
 void TakeoffCoach::onUnload()
@@ -961,6 +971,38 @@ void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
                 if (!attempt_.validationCandidate.valid) attempt_.lastFailureReason = "No reachable target";
             }
 
+            // Keep the same logical contact target, but continuously refresh
+            // the car-side solution from the player's current grounded state.
+            // This prevents the blue marker from remaining attached to the
+            // generation snapshot while the player is steering or accelerating.
+            if (!attempt_.cueTriggered && attempt_.candidateTarget.valid
+                && attempt_.validationCandidate.valid)
+            {
+                Solution liveCandidate = solveTargetWithProfiles(
+                    car, attempt_.candidateTarget, now);
+                if (!liveCandidate.valid)
+                    liveCandidate = buildSimpleFallback(
+                        car, attempt_.candidateTarget, now);
+
+                if (liveCandidate.valid)
+                {
+                    attempt_.validationCandidate = liveCandidate;
+                    attempt_.solution = liveCandidate;
+                    attempt_.cueTime = liveCandidate.idealJumpAbsolute
+                        - getFloat("tc_reaction_allowance_ms") / 1000.0f;
+                }
+                else
+                {
+                    attempt_.validationCandidate.takeoff = predictLiveTakeoff(
+                        car, now, attempt_.validationCandidate.idealJumpAbsolute);
+                    attempt_.validationCandidate.idealTakeoffPosition =
+                        attempt_.validationCandidate.takeoff.position;
+                    attempt_.validationCandidate.requiredDirection = normalized2D(
+                        attempt_.candidateTarget.desiredCarPosition
+                        - attempt_.validationCandidate.takeoff.position);
+                }
+            }
+
             BallPredictionSlice expected;
             const bool sampled = samplePath(now, expected);
             const bool pathMatches = sampled &&
@@ -1566,104 +1608,195 @@ TakeoffCoach::ContactTarget TakeoffCoach::selectContactTarget(
     });
 
     Ranked best = reachable.front();
-    // Visible takeoff marker: continue the player's current state; never show ideal bot steering.
-    Vector p = car.GetLocation();
-    Vector v = car.GetVelocity();
-    float yaw = std::atan2(forwardFromRotator(car.GetRotation()).Y, forwardFromRotator(car.GetRotation()).X);
-    const float groundTime = std::max(0.0f, best.solution.jumpDelay);
-    const float dt = 1.0f / 120.0f;
-    for (float t = 0.0f; t < groundTime; t += dt)
-    {
-        const float step = std::min(dt, groundTime - t);
-        const float speed = length2D(v);
-        const float turnRate = (attempt_.input.handbrake ? 2.2f : 1.25f) * clamp(1.0f - speed / 3000.0f, 0.25f, 1.0f);
-        yaw += attempt_.input.steer * turnRate * step;
-        const Vector nose{std::cos(yaw), std::sin(yaw), 0.0f};
-        v = v + nose * (attempt_.input.throttle * 900.0f * step);
-        if (attempt_.input.boost) v = v + nose * (BOOST_ACCEL * step);
-        Vector horizontal{v.X, v.Y, 0.0f};
-        if (length2D(horizontal) > 2300.0f) { horizontal = normalized2D(horizontal) * 2300.0f; v.X = horizontal.X; v.Y = horizontal.Y; }
-        p = p + v * step;
-        p.Z = car.GetLocation().Z;
-    }
-    best.solution.takeoff = TakeoffState{p, v, Vector{std::cos(yaw), std::sin(yaw), 0.0f}, best.solution.idealJumpAbsolute};
-    best.solution.idealTakeoffPosition = p;
+    // The selected solution already contains the exact live takeoff state used by the aerial simulation.
 
     if (selectedSolution) *selectedSolution = best.solution;
     const_cast<Attempt&>(attempt_).solverBackend = best.solution.simpleFallback ? "SIMPLE FALLBACK" : "ADVANCED + LIVE TAKEOFF";
     return best.target;
 }
 
-bool TakeoffCoach::simulateAerialProfile(
-    CarWrapper car, const ContactTarget& target, AerialProfile profile, float duration, Solution& out) const
+TakeoffCoach::TakeoffState TakeoffCoach::predictLiveTakeoff(
+    CarWrapper car,
+    float now,
+    float idealJumpAbsolute) const
 {
-    if (duration<=0.0f) return false;
-    const float now=nowSeconds();
-    const float available=target.contactAbsoluteTime-now;
-    const float jumpDelay=available-duration;
-    if (jumpDelay<0.0f) return false;
-    Vector p=car.GetLocation(), v=car.GetVelocity();
-    Vector forward=normalized(forwardFromRotator(car.GetRotation()));
-    float yaw=std::atan2(forward.Y,forward.X), pitch=std::asin(clamp(forward.Z,-1.0f,1.0f));
-    const Vector desiredGround=normalized2D(target.desiredCarPosition-p);
-    const float groundDt=1.0f/120.0f;
-    for (float t=0.0f;t<jumpDelay;t+=groundDt)
-    {
-        const float angle=signedAngleDeg2D(Vector{std::cos(yaw),std::sin(yaw),0},desiredGround);
-        yaw+=clamp(angle*DEG_TO_RAD,-2.6f*groundDt,2.6f*groundDt);
-        Vector nose{std::cos(yaw),std::sin(yaw),0};
-        const float speed=length2D(v);
-        const float accel=(speed<1400.0f?1000.0f:420.0f) * getFloat("tc_horizontal_calibration");
-        const float throttle = clamp(attempt_.input.throttle, -1.0f, 1.0f);
-        const float liveAccel = accel * throttle;
-        v=v+nose*(liveAccel*groundDt);
-        if (length2D(v)>2300.0f) { Vector hv=normalized2D(v)*2300.0f; v.X=hv.X; v.Y=hv.Y; }
-        p=p+v*groundDt; p.Z=car.GetLocation().Z;
-    }
-    TakeoffState takeoff{p,v,Vector{std::cos(yaw),std::sin(yaw),0},now+jumpDelay};
+    Vector position = car.GetLocation();
+    Vector velocity = car.GetVelocity();
+    const Vector initialForward = normalized2D(forwardFromRotator(car.GetRotation()));
+    float yaw = std::atan2(initialForward.Y, initialForward.X);
+    const float duration = std::max(0.0f, idealJumpAbsolute - now);
+    constexpr float stepSize = 1.0f / 120.0f;
 
-    float secondJumpDelay=999.0f,jumpHold=0.0f,boostDelay=0.0f,pitchDelay=0.0f,pitchStrength=1.0f;
-    switch(profile){
-    case AerialProfile::SingleJump: jumpHold=.16f;boostDelay=.08f;pitchDelay=.08f;break;
-    case AerialProfile::FastAerial: secondJumpDelay=.10f;jumpHold=.20f;boostDelay=0;pitchDelay=.03f;break;
-    case AerialProfile::DelayedSecondJump: secondJumpDelay=.28f;jumpHold=.16f;boostDelay=.06f;pitchDelay=.08f;break;
-    case AerialProfile::Conservative: secondJumpDelay=.18f;jumpHold=.12f;boostDelay=.12f;pitchDelay=.12f;pitchStrength=.82f;break; }
-    const float verticalCalibration = getFloat("tc_vertical_calibration");
-    v.Z+=FIRST_JUMP * verticalCalibration;
-    bool second=false; float boostSeconds=0.0f; const float dt=1.0f/120.0f;
-    const Vector targetDir=normalized(target.desiredCarPosition-p);
-    for(float t=0;t<duration;t+=dt)
+    for (float elapsed = 0.0f; elapsed < duration; elapsed += stepSize)
     {
-        if(t>=pitchDelay)
+        const float dt = std::min(stepSize, duration - elapsed);
+        const float speed = length2D(velocity);
+        const float steerAuthority = clamp(1.0f - speed / 3000.0f, 0.22f, 1.0f);
+        const float yawRate = (attempt_.input.handbrake ? 2.25f : 1.30f)
+            * attempt_.input.steer * steerAuthority;
+        yaw += yawRate * dt;
+
+        const Vector nose{std::cos(yaw), std::sin(yaw), 0.0f};
+        const float signedForwardSpeed = dot(velocity, nose);
+        float throttleAcceleration = 0.0f;
+        if (attempt_.input.throttle > 0.01f)
+            throttleAcceleration = signedForwardSpeed < 1400.0f ? 1000.0f : 420.0f;
+        else if (attempt_.input.throttle < -0.01f)
+            throttleAcceleration = signedForwardSpeed > -1200.0f ? 800.0f : 200.0f;
+
+        velocity = velocity
+            + nose * (attempt_.input.throttle * throttleAcceleration * dt);
+        if (attempt_.input.boost && attempt_.input.throttle >= 0.0f)
+            velocity = velocity + nose * (BOOST_ACCEL * dt);
+
+        Vector horizontal{velocity.X, velocity.Y, 0.0f};
+        const float horizontalSpeed = length2D(horizontal);
+        if (horizontalSpeed > 2300.0f)
         {
-            const float desiredPitch=std::asin(clamp(targetDir.Z,-0.95f,0.95f));
-            const float pitchError=desiredPitch-pitch;
-            pitch+=clamp(pitchError*5.0f,-2.8f,2.8f)*dt*pitchStrength;
-            const float desiredYaw=std::atan2(targetDir.Y,targetDir.X);
-            float yawError=desiredYaw-yaw;
-            while(yawError>PI)yawError-=2*PI; while(yawError<-PI)yawError+=2*PI;
-            yaw+=clamp(yawError*4.0f,-2.5f,2.5f)*dt;
+            horizontal = normalized2D(horizontal) * 2300.0f;
+            velocity.X = horizontal.X;
+            velocity.Y = horizontal.Y;
         }
-        forward=Vector{std::cos(pitch)*std::cos(yaw),std::cos(pitch)*std::sin(yaw),std::sin(pitch)};
-        if(!second&&t>=secondJumpDelay){v=v+forward*(SECOND_JUMP * verticalCalibration);second=true;}
-        if(t<jumpHold)v.Z+=1458.0f*verticalCalibration*dt;
-        if(t>=boostDelay){v=v+forward*(BOOST_ACCEL*verticalCalibration*dt);boostSeconds+=dt;}
-        if(length(v)>2300.0f)v=normalized(v)*2300.0f;
-        v.Z+=GRAVITY_Z*dt; p=p+v*dt;
+
+        position = position + velocity * dt;
+        position.Z = car.GetLocation().Z;
     }
-    const float error=length(target.desiredCarPosition-p);
-    const float tolerance=getFloat("tc_car_contact_tolerance");
-    if(error>tolerance)return false;
-    out.valid=true;out.profile=profile;out.requiredAerialDuration=duration;out.requiredBoost=boostSeconds*33.3f;
+
+    return TakeoffState{
+        position,
+        velocity,
+        Vector{std::cos(yaw), std::sin(yaw), 0.0f},
+        idealJumpAbsolute};
+}
+
+bool TakeoffCoach::simulateAerialFromTakeoff(
+    const TakeoffState& takeoff,
+    const ContactTarget& target,
+    AerialProfile profile,
+    float duration,
+    Solution& out) const
+{
+    if (duration <= 0.0f)
+        return false;
+
+    Vector position = takeoff.position;
+    Vector velocity = takeoff.velocity;
+    Vector forward = normalized(takeoff.facingDirection);
+    float yaw = std::atan2(forward.Y, forward.X);
+    float pitch = std::asin(clamp(forward.Z, -1.0f, 1.0f));
+
+    float secondJumpDelay = 999.0f;
+    float jumpHold = 0.0f;
+    float boostDelay = 0.0f;
+    float pitchDelay = 0.0f;
+    float pitchStrength = 1.0f;
+    switch (profile)
+    {
+    case AerialProfile::SingleJump:
+        jumpHold = 0.16f; boostDelay = 0.08f; pitchDelay = 0.08f; break;
+    case AerialProfile::FastAerial:
+        secondJumpDelay = 0.10f; jumpHold = 0.20f; boostDelay = 0.0f; pitchDelay = 0.03f; break;
+    case AerialProfile::DelayedSecondJump:
+        secondJumpDelay = 0.28f; jumpHold = 0.16f; boostDelay = 0.06f; pitchDelay = 0.08f; break;
+    case AerialProfile::Conservative:
+        secondJumpDelay = 0.18f; jumpHold = 0.12f; boostDelay = 0.12f; pitchDelay = 0.12f; pitchStrength = 0.82f; break;
+    }
+
+    const float verticalCalibration = getFloat("tc_vertical_calibration");
+    velocity.Z += FIRST_JUMP * verticalCalibration;
+    bool secondJumpUsed = false;
+    float boostSeconds = 0.0f;
+    constexpr float dt = 1.0f / 120.0f;
+
+    for (float elapsed = 0.0f; elapsed < duration; elapsed += dt)
+    {
+        const Vector toTarget = normalized(target.desiredCarPosition - position);
+        if (elapsed >= pitchDelay)
+        {
+            const float desiredPitch = std::asin(clamp(toTarget.Z, -0.95f, 0.95f));
+            const float pitchError = desiredPitch - pitch;
+            pitch += clamp(pitchError * 5.0f, -2.8f, 2.8f) * dt * pitchStrength;
+
+            const float desiredYaw = std::atan2(toTarget.Y, toTarget.X);
+            float yawError = desiredYaw - yaw;
+            while (yawError > PI) yawError -= 2.0f * PI;
+            while (yawError < -PI) yawError += 2.0f * PI;
+            yaw += clamp(yawError * 4.0f, -2.5f, 2.5f) * dt;
+        }
+
+        forward = Vector{
+            std::cos(pitch) * std::cos(yaw),
+            std::cos(pitch) * std::sin(yaw),
+            std::sin(pitch)};
+
+        if (!secondJumpUsed && elapsed >= secondJumpDelay)
+        {
+            velocity = velocity + forward * (SECOND_JUMP * verticalCalibration);
+            secondJumpUsed = true;
+        }
+        if (elapsed < jumpHold)
+            velocity.Z += 1458.0f * verticalCalibration * dt;
+        if (elapsed >= boostDelay)
+        {
+            velocity = velocity + forward * (BOOST_ACCEL * verticalCalibration * dt);
+            boostSeconds += dt;
+        }
+        if (length(velocity) > 2300.0f)
+            velocity = normalized(velocity) * 2300.0f;
+
+        velocity.Z += GRAVITY_Z * dt;
+        position = position + velocity * dt;
+    }
+
+    const float error = length(target.desiredCarPosition - position);
+    const float tolerance = getFloat("tc_car_contact_tolerance");
+    if (error > tolerance)
+        return false;
+
+    out.valid = true;
+    out.profile = profile;
+    out.requiredAerialDuration = duration;
+    out.requiredBoost = boostSeconds * 33.3f;
+    out.carContactError = error;
+    out.confidence = clamp(1.0f - error / std::max(1.0f, tolerance), 0.0f, 1.0f);
+    out.robustness = clamp(out.confidence - getFloat("tc_robustness_margin"), 0.0f, 1.0f);
+    out.takeoff = takeoff;
+    out.idealTakeoffPosition = takeoff.position;
+    out.requiredDirection = normalized2D(target.desiredCarPosition - takeoff.position);
+    out.contactPoint = target.ballPosition;
+    out.target = target;
+    return true;
+}
+
+bool TakeoffCoach::simulateAerialProfile(
+    CarWrapper car,
+    const ContactTarget& target,
+    AerialProfile profile,
+    float duration,
+    Solution& out) const
+{
+    const float now = nowSeconds();
+    const float available = target.contactAbsoluteTime - now;
+    const float jumpDelay = available - duration;
+    if (jumpDelay < 0.0f)
+        return false;
+
+    const float idealJumpAbsolute = now + jumpDelay;
+    const TakeoffState liveTakeoff = predictLiveTakeoff(car, now, idealJumpAbsolute);
+    if (!simulateAerialFromTakeoff(liveTakeoff, target, profile, duration, out))
+        return false;
+
+    out.jumpDelay = jumpDelay;
+    out.contactDelay = available;
+    out.idealJumpAbsolute = idealJumpAbsolute;
+
     float availableBoost = 0.0f;
     auto boost = car.GetBoostComponent();
-    if (!boost.IsNull()) availableBoost = boost.GetCurrentBoostAmount();
+    if (!boost.IsNull())
+        availableBoost = boost.GetCurrentBoostAmount();
     out.availableBoost = availableBoost;
-    out.boostDeficit=out.requiredBoost>availableBoost;
-    out.carContactError=error;out.confidence=clamp(1.0f-error/std::max(1.0f,tolerance),0.0f,1.0f);
-    out.robustness=clamp(out.confidence-getFloat("tc_robustness_margin"),0.0f,1.0f);
-    out.takeoff=takeoff;out.idealTakeoffPosition=takeoff.position;out.requiredDirection=target.desiredFacingDirection;
-    out.contactPoint=target.ballPosition;out.target=target;return true;
+    out.boostDeficit = out.requiredBoost > availableBoost;
+    return true;
 }
 
 bool TakeoffCoach::cheapReachable(CarWrapper car, const ContactTarget& target, float now) const
@@ -1723,12 +1856,10 @@ TakeoffCoach::Solution TakeoffCoach::buildSimpleFallback(CarWrapper car, const C
     result.alignmentErrorDeg = signedAngleDeg2D(normalized2D(forwardFromRotator(car.GetRotation())), result.requiredDirection);
     result.confidence = 0.25f;
     result.robustness = 0.15f;
-    result.takeoff.position = car.GetLocation() + car.GetVelocity() * std::max(0.0f, result.jumpDelay);
-    result.takeoff.position.Z = car.GetLocation().Z;
-    result.takeoff.velocity = car.GetVelocity();
-    result.takeoff.facingDirection = normalized2D(forwardFromRotator(car.GetRotation()));
-    result.takeoff.absoluteTime = result.idealJumpAbsolute;
+    result.takeoff = predictLiveTakeoff(car, now, result.idealJumpAbsolute);
     result.idealTakeoffPosition = result.takeoff.position;
+    result.requiredDirection = normalized2D(
+        target.desiredCarPosition - result.takeoff.position);
     return result;
 }
 
@@ -1784,12 +1915,30 @@ TakeoffCoach::Solution TakeoffCoach::solveLockedTarget(
 {
     if (!attempt_.targetLocked || !attempt_.lockedTarget.valid)
         return Solution{};
-    if (attempt_.cueTriggered || attempt_.phase == Phase::Airborne)
+    if (attempt_.phase == Phase::Airborne)
     {
+        Solution frozen = attempt_.jumpSolution.valid
+            ? attempt_.jumpSolution
+            : attempt_.lockedSolution;
+        frozen.jumpDelay = frozen.idealJumpAbsolute - now;
+        frozen.contactDelay = attempt_.lockedTarget.contactAbsoluteTime - now;
+        return frozen;
+    }
+    if (attempt_.cueTriggered)
+    {
+        // The contact target and jump time are frozen at green, but the blue
+        // marker continues to predict where the player's current grounded
+        // motion will place the car at that fixed jump instant.
         Solution frozen = attempt_.lockedSolution;
         frozen.jumpDelay = frozen.idealJumpAbsolute - now;
         frozen.contactDelay = attempt_.lockedTarget.contactAbsoluteTime - now;
-        frozen.alignmentErrorDeg = signedAngleDeg2D(normalized2D(forwardFromRotator(car.GetRotation())), normalized2D(attempt_.lockedTarget.ballPosition - car.GetLocation()));
+        frozen.alignmentErrorDeg = signedAngleDeg2D(
+            normalized2D(forwardFromRotator(car.GetRotation())),
+            normalized2D(attempt_.lockedTarget.ballPosition - car.GetLocation()));
+        frozen.takeoff = predictLiveTakeoff(car, now, frozen.idealJumpAbsolute);
+        frozen.idealTakeoffPosition = frozen.takeoff.position;
+        frozen.requiredDirection = normalized2D(
+            attempt_.lockedTarget.desiredCarPosition - frozen.takeoff.position);
         return frozen;
     }
     Solution live = solveTargetWithProfiles(car, attempt_.lockedTarget, now);
@@ -1801,6 +1950,10 @@ TakeoffCoach::Solution TakeoffCoach::solveLockedTarget(
         live.alignmentErrorDeg = signedAngleDeg2D(
             normalized2D(forwardFromRotator(car.GetRotation())),
             normalized2D(attempt_.lockedTarget.ballPosition - car.GetLocation()));
+        live.takeoff = predictLiveTakeoff(car, now, live.idealJumpAbsolute);
+        live.idealTakeoffPosition = live.takeoff.position;
+        live.requiredDirection = normalized2D(
+            attempt_.lockedTarget.desiredCarPosition - live.takeoff.position);
     }
     return live;
 }
@@ -2324,7 +2477,7 @@ void TakeoffCoach::RenderSettings()
     style.GrabRounding = 6.0f;
     style.ChildRounding = 8.0f;
     style.PopupRounding = 6.0f;
-    ImGui::TextUnformatted("Takeoff Coach build: 5.7.0-reach-bounce-fix");
+    ImGui::TextUnformatted("Takeoff Coach build: 5.8.0-live-takeoff");
     if (ImGui::BeginTabBar("TakeoffCoachTabs"))
     {
         if (ImGui::BeginTabItem("Drill"))

@@ -327,6 +327,8 @@ private:
     bool isUnsupportedTransition(const Vector& position, float radius) const;
     ContactTarget selectContactTarget(CarWrapper car, const std::vector<BallPredictionSlice>& path, float now, Solution* selectedSolution = nullptr) const;
     Solution solveTargetWithProfiles(CarWrapper car, const ContactTarget& target, float now) const;
+    TakeoffState predictLiveTakeoff(CarWrapper car, float now, float idealJumpAbsolute) const;
+    bool simulateAerialFromTakeoff(const TakeoffState& takeoff, const ContactTarget& target, AerialProfile profile, float duration, Solution& out) const;
     bool simulateAerialProfile(CarWrapper car, const ContactTarget& target, AerialProfile profile, float duration, Solution& out) const;
     bool samplePath(float absoluteTime, BallPredictionSlice& out) const;
     Vector chooseGoalPoint(const ContactTarget& base, Vector carPosition) const;

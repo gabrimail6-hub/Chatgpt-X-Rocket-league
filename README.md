@@ -1,8 +1,8 @@
-# Takeoff Coach 5.7.0 — Reach + Bounce Fix
+# Takeoff Coach 5.8.0 — Reach + Bounce Fix
 
 Takeoff Coach is a BakkesMod Freeplay drill for Fast Touch, Shoot, and Full Random scenarios.
 
-## 5.7.0 behavior
+## 5.8.0 behavior
 
 - Fixed 10-second ball prediction horizon.
 - `Minimum preparation time before jump` is a real solution constraint, not merely a cue offset.
@@ -27,3 +27,7 @@ GitHub Actions produces only:
 - `takeoffcoach.cfg`
 
 The obsolete installer command file is not included.
+
+## 5.8 live takeoff correction
+
+The blue takeoff marker is no longer copied from an ideal automatically-steered ground path. The selected ball contact remains stable, while the car continuation and aerial reach are recomputed from the local car's current position, full velocity, nose and current throttle/steer/boost/handbrake input. The same predicted takeoff state is used by the reach test and the marker. Rounded HUD boxes are rendered without overlapping alpha layers.
