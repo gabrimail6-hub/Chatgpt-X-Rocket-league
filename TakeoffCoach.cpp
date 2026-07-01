@@ -519,6 +519,7 @@ bool TakeoffCoach::isScenarioSafe(Scenario scenario) const
 
     Vector p = scenario.ballPosition;
     Vector v = scenario.ballVelocity;
+    Vector angularVelocity{0.0f, 0.0f, 0.0f};
     int bounces = 0;
     const float dt = clamp(getFloat("tc_prediction_timestep"), 1.0f / 240.0f, 1.0f / 30.0f);
     for (float t = 0.0f; t < getFloat("tc_contact_max"); t += dt)
@@ -526,7 +527,7 @@ bool TakeoffCoach::isScenarioSafe(Scenario scenario) const
         v.Z += GRAVITY_Z * dt;
         p = p + v * dt;
         SurfaceType surface = SurfaceType::None;
-        if (collideBall(p, v, 93.0f, surface)) ++bounces;
+        if (collideBall(p, v, angularVelocity, 93.0f, surface)) ++bounces;
         if (bounces > getInt("tc_max_bounces")) break;
         if (std::abs(p.X) > 5000.0f || std::abs(p.Y) > 6500.0f || p.Z < 0.0f || p.Z > 2200.0f)
             return false;
@@ -780,7 +781,7 @@ void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
         attempt_.frozenCueTime = attempt_.cueTime;
         attempt_.lockedTarget = attempt_.lockedSolution.target;
         attempt_.solution = attempt_.lockedSolution;
-        if (getBool("tc_cue_sound")) cvarManager->executeCommand("play_sound_from_file sounds\cue.wav");
+        if (getBool("tc_cue_sound")) cvarManager->executeCommand("play_sound_from_file sounds\\cue.wav");
     }
 
     const bool reactionCue = attempt_.guidanceStyle == GuidanceStyle::ReactionCue;
@@ -1605,8 +1606,11 @@ void TakeoffCoach::renderHud(CanvasWrapper canvas)
                 for (int i=0;i<24;++i)
                 {
                     const float a=2.0f*PI*i/24.0f, b=2.0f*PI*(i+1)/24.0f;
-                    canvas.DrawLine(Vector2{marker.X+std::cos(a)*size,marker.Y+std::sin(a)*size},
-                        Vector2{marker.X+std::cos(b)*size,marker.Y+std::sin(b)*size},2.0f);
+                    const int ax = static_cast<int>(std::lround(marker.X + std::cos(a) * size));
+                    const int ay = static_cast<int>(std::lround(marker.Y + std::sin(a) * size));
+                    const int bx = static_cast<int>(std::lround(marker.X + std::cos(b) * size));
+                    const int by = static_cast<int>(std::lround(marker.Y + std::sin(b) * size));
+                    canvas.DrawLine(Vector2{ax, ay}, Vector2{bx, by}, 2.0f);
                 }
             }
 

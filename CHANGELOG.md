@@ -1,3 +1,9 @@
+# Takeoff Coach 5.1.1
+
+- Fixed the scenario safety predictor call after the spin-aware collision signature change.
+- Fixed the Windows cue-sound path escape sequence.
+- Fixed MSVC narrowing errors in ring-marker vertex generation.
+
 # Changelog
 
 ## 5.1.0 Vector Runtime Fix
