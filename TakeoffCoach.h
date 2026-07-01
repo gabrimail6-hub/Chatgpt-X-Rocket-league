@@ -27,9 +27,13 @@ private:
     enum class Objective : int
     {
         Fast = 0,
-        Control = 1,
-        RandomCall = 2,
-        Score = 3
+        Shoot = 1
+    };
+
+    enum class GuidanceStyle : int
+    {
+        Read = 0,
+        ReactionCue = 1
     };
 
     enum class Phase
@@ -48,6 +52,7 @@ private:
         Vector ballPosition{};
         Vector ballVelocity{};
         Objective objective = Objective::Fast;
+        GuidanceStyle guidanceStyle = GuidanceStyle::Read;
         int goalSign = 1;
     };
 
@@ -68,6 +73,7 @@ private:
         uint64_t generation = 0;
         Phase phase = Phase::Idle;
         Objective objective = Objective::Fast;
+        GuidanceStyle guidanceStyle = GuidanceStyle::Read;
         Scenario scenario{};
         Solution solution{};
         Solution lockedSolution{};
@@ -141,6 +147,10 @@ private:
     void renderDrillTab();
     void renderSetupTab();
     void renderFeedbackTab();
+    void saveModePreset(int objective);
+    void loadModePreset(int objective);
+    void resetModePreset(int objective);
+    std::string modePrefix(int objective) const;
     bool rangeControl(
         const char* label,
         const std::string& minName,
