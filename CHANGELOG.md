@@ -1,31 +1,22 @@
-# Takeoff Coach 5.1.1
-
-- Fixed the scenario safety predictor call after the spin-aware collision signature change.
-- Fixed the Windows cue-sound path escape sequence.
-- Fixed MSVC narrowing errors in ring-marker vertex generation.
-
 # Changelog
 
-## 5.1.0 Vector Runtime Fix
+## 5.2.0 Functional Baseline
 
-- Fixed Reaction Cue data leaking into Read guidance.
-- Separated raw reaction, allowance-adjusted reaction loss, and actual contact-time loss.
-- Froze cue time, target, and solution after cue activation.
-- Added separate reaction target policies.
-- Replaced mandatory full verification delay with early stable lock and timeout-based failure.
-- Rerolls when the verification window expires without any valid reachable candidate.
-- Ranks candidates only after aerial reachability testing.
-- Added persistent bounce-surface classification and observed-vs-predicted bounce validation.
-- Corrected normal/tangential bounce decomposition and added bounded collision substeps.
-- Marked unsupported curved-transition regions instead of producing confident targets through them.
-- Added practical spin coupling in bounce response.
-- Replaced fabricated Shoot aim scoring with a basic car-ball impulse and goal-corridor estimate.
-- Improved near/far-post selection from approach geometry.
-- Simulated grounded travel and bounded car orientation before aerial contact.
-- Split ball-path, car-contact, and takeoff-marker tolerances.
-- Improved touch and goal detection with event hooks and fallbacks.
-- Corrected session statistic denominators and absolute angle averaging.
-- Expanded preset memory and removed objective-change preset overwrite.
-- Fixed direct preset copying and Custom reset side effects.
-- Added Cross, Square, and Ring marker shapes and camera-facing projection checks.
-- Standardized ball-centre height controls to 93–2044 uu.
+- Made Timing, Angle, and Height use explicit live/frozen sources.
+- Replaced the cue effects/audio path with a single reliable red/green rectangle.
+- Added a bounded coarse-to-fine candidate/profile search and automatic simple fallback.
+- Added real controller input capture for grounded continuation inputs.
+- Wired horizontal and vertical calibration into reach simulation.
+- Replaced hardcoded boost availability with the local car boost component.
+- Connected Shoot aim/speed scoring switches, setup rejection limit, and marker-before-cue master control.
+- Added solve budgets, backend selection, takeoff confidence threshold, and runtime diagnostics.
+- Kept Custom preset storage connected through the generic preset schema.
+- Added `cvar_audit.txt` and repository metadata/build-output exclusions.
+- Removed cue sound, audio settings, and external sound-file dependencies.
+
+## Known limitations
+
+- The advanced aerial controller is still a bounded reachability approximation, not a full Rocket League car dynamics replica.
+- Shoot output is explicitly an estimated impulse/corridor score, not a guaranteed physical shot.
+- Expensive search is bounded on the game thread; it has not yet been moved to a worker thread.
+- Ball collision geometry remains approximate in curved and overlapping goal regions.

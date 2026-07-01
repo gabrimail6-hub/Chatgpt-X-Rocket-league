@@ -1,25 +1,32 @@
-# Takeoff Coach 5.1 Vector Runtime Fix
+# Takeoff Coach 5.2 — Functional Baseline
 
-BakkesMod freeplay drill for two objectives: **Fast Touch** and **Shoot**.
+Takeoff Coach is a BakkesMod freeplay drill for **Fast Touch** and **Shoot**.
 
-## Runtime systems
+## Core runtime outputs
 
-- Reaction grading only runs in Reaction Cue guidance.
-- Cue time, target, and solution freeze on the first green cue frame.
-- Candidate targets appear immediately and lock as soon as the configured stable time is satisfied; the verification window is a timeout, not a mandatory delay.
-- Fast Touch ranks only reachable useful contacts. Shoot ranks only reachable contacts whose estimated outgoing ball path crosses the selected goal corridor.
-- One stored contact target drives timing, alignment, ball marker, takeoff marker, cue, and grading.
-- Ball prediction stores persistent last-bounce classification, uses one collision response per bounded substep, proper normal/tangent decomposition, approximate spin coupling, and rejects unsupported curved-transition regions.
-- Touch and goal hooks are used first, with geometric/position fallbacks.
-- Session statistics use separate grading denominators.
-- Shoot Default, Fast Touch Default, and Custom store full functional settings. Objective changes do not overwrite settings unless auto-load is enabled.
+- **Timing** is displayed only from a locked reachable target. While grounded it is `current time - ideal jump time`; it freezes on the first real jump edge.
+- **Angle** is the signed 2D angle between the car's actual nose and the vector from the live car position to the stored future **ball-centre** target. It freezes on the first jump.
+- **Height** is the real live ball-centre height before contact and the real touch/end height afterward. The physical range is 93–2044 uu.
+- **Reaction Cue** is a solid bottom-centre rectangle. It is red immediately in Reaction Cue mode, becomes green at the frozen cue time, and never depends on audio or external files.
+
+## Solver behavior
+
+The selector first applies cheap reach bounds to the complete ball path, keeps a bounded finalist set, and only then runs profile simulation. Search uses a coarse duration pass plus local refinement and has candidate, profile-simulation, and solve-time budgets. Automatic mode falls back to a simple pre-contact reach estimate rather than leaving the HUD empty.
+
+The advanced ball and Shoot models remain approximations. Diagnostics identify whether the selected result came from `ADVANCED` or `SIMPLE FALLBACK`; a displayed Shoot estimate is not a guaranteed goal.
+
+## Presets
+
+- Shoot Default
+- Fast Touch Default
+- Custom
+
+Preset slot data is copied through one schema. Custom slot cvars are accessed dynamically by the generic preset loader; they are listed as dynamically used in `cvar_audit.txt`.
+
+## Diagnostics
+
+Open **Solver / Advanced → Diagnostics** to inspect validation state, backend, path size, candidates tested, reachable candidates, profile simulations, solve duration, cue state/times, target times, car nose/vector-to-target, signed angle, live ball height, target height, and the latest rejection reason.
 
 ## Build
 
-GitHub Actions builds x64 C++20 with warnings treated as errors for repository-owned code. BakkesMod SDK headers are treated as external headers.
-
-The workflow artifact contains:
-
-- `TakeoffCoach.dll`
-- `takeoffcoach.cfg`
-- `install_takeoffcoach.command`
+GitHub Actions builds x64 C++20 and treats repository warnings as errors while isolating third-party SDK warnings.

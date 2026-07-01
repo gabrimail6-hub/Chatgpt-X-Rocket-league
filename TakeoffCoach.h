@@ -76,6 +76,20 @@ private:
         Feedback
     };
 
+    enum class ValidationState
+    {
+        Settling, PredictingPath, SelectingCandidates, TestingReachability,
+        ValidatingLivePath, Locked, Failed
+    };
+
+    struct InputSnapshot
+    {
+        float throttle = 0.0f;
+        float steer = 0.0f;
+        bool boost = false;
+        bool handbrake = false;
+    };
+
     struct Scenario
     {
         Vector carPosition{};
@@ -149,6 +163,8 @@ private:
         TakeoffState takeoff{};
         float carContactError = 0.0f;
         bool boostDeficit = false;
+        float availableBoost = 0.0f;
+        bool simpleFallback = false;
         AerialProfile profile = AerialProfile::FastAerial;
         ContactTarget target{};
     };
@@ -176,8 +192,19 @@ private:
         bool touchEventSeen = false;
         bool goalEventSeen = false;
         bool predictedBounceMismatch = false;
+        bool timingFrozen = false;
+        bool angleFrozen = false;
+        bool pathStillValid = true;
+        ValidationState validationState = ValidationState::Settling;
+        InputSnapshot input{};
 
         float startedAt = 0.0f;
+        float scenarioStartAbsolute = 0.0f;
+        float candidateCreatedAbsolute = 0.0f;
+        float targetLockedAbsolute = 0.0f;
+        float cueAbsolute = 0.0f;
+        float jumpAbsolute = 0.0f;
+        float touchAbsolute = 0.0f;
         float jumpAt = 0.0f;
         float feedbackUntil = 0.0f;
         float lastSolveAt = -100.0f;
@@ -193,6 +220,12 @@ private:
         int rejectedSetups = 0;
         int failedValidationSamples = 0;
         int pathCorrections = 0;
+        int targetCandidatesTested = 0;
+        int reachableCandidates = 0;
+        int profileSimulations = 0;
+        float lastSolveDurationMs = 0.0f;
+        std::string lastFailureReason = "None";
+        std::string solverBackend = "NONE";
         float settledAt = 0.0f;
         float initialCandidateTime = 0.0f;
         float initialAvailableJumpDelay = 0.0f;
@@ -257,6 +290,8 @@ private:
 
     Solution solve(CarWrapper car, BallWrapper ball, float now);
     Solution solveLockedTarget(CarWrapper car, float now) const;
+    Solution buildSimpleFallback(CarWrapper car, const ContactTarget& target, float now) const;
+    bool cheapReachable(CarWrapper car, const ContactTarget& target, float now) const;
     std::vector<BallPredictionSlice> buildBallPath(Vector position, Vector velocity, Vector angularVelocity, float now);
     bool collideBall(Vector& position, Vector& velocity, Vector& angularVelocity, float radius, SurfaceType& surface) const;
     bool isUnsupportedTransition(const Vector& position, float radius) const;
