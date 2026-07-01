@@ -113,6 +113,7 @@ private:
         Objective objective = Objective::FastTouch;
         GuidanceStyle guidanceStyle = GuidanceStyle::Read;
         int goalSign = 1;
+        int preferredBounceCount = 0;
     };
 
     struct ScenarioValidation;

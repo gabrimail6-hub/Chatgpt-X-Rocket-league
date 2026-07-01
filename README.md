@@ -1,23 +1,29 @@
-# Takeoff Coach 5.6.0 — Coherent Profiles
+# Takeoff Coach 5.7.0 — Reach + Bounce Fix
 
-BakkesMod Freeplay drill for Fast Touch and Shoot.
+Takeoff Coach is a BakkesMod Freeplay drill for Fast Touch, Shoot, and Full Random scenarios.
 
-## Runtime package
-GitHub Actions publishes only `TakeoffCoach.dll` and `takeoffcoach.cfg`.
+## 5.7.0 behavior
 
-## Key behavior
-- Read mode grades the latest viable jump for the selected contact.
-- Reaction Cue turns green before the physical jump time by the configured human allowance.
-- Ball and car setups are generated around a coherent interception route.
-- Maximum bounces is a real Drill constraint; default is zero.
-- Height is live before contact and freezes only on a valid local-car touch.
-- Matching mode setup auto-load is enabled by default and can be disabled.
+- Fixed 10-second ball prediction horizon.
+- `Minimum preparation time before jump` is a real solution constraint, not merely a cue offset.
+- Reaction allowance only advances the green cue before the physical ideal jump.
+- Initial car velocity is always collinear with the car nose: positive speed drives forward, negative speed drives backward.
+- Maximum bounces now selects and validates real bounce tiers. When greater than zero, generated scenarios may deliberately target any bounce count up to the chosen maximum.
+- Predicted supported bounces preserve timing. A large velocity change alone no longer marks the path as changed.
+- The normal HUD uses a compact em dash for unavailable timing and never prints a path-change paragraph.
+- Timing, alignment, and height indicators have a global visibility switch plus individual switches.
+- The height gauge spans the complete 0–2044 uu field-height display, so its pointer does not saturate. Target selection remains a physically legal ball-centre range.
+- The obsolete `Full height display margin` setting has been removed.
 
+## Height conventions
 
-## 5.6 setup additions
+Target selection uses legal ball-centre heights. The live height gauge is displayed over the full field-height scale from 0 to 2044 uu.
 
-- Shoot vertical speed now starts at 0 uu/s by default.
-- Full Random setup spans -1800 to 6000 uu approach distance, full lateral/rotation ranges, and signed car speed from -1800 to 2300 uu/s.
-- Car velocity angle was removed; velocity is aligned to the intended approach line, with negative speed representing reverse motion.
-- Minimum cue lead is configurable up to 3000 ms. Reaction allowance is configurable up to 1000 ms and is added on top of the lead requirement.
-- The main HUD panel and reaction cue use rounded corners.
+## Build artifact
+
+GitHub Actions produces only:
+
+- `TakeoffCoach.dll`
+- `takeoffcoach.cfg`
+
+The obsolete installer command file is not included.

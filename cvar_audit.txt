@@ -1,13 +1,12 @@
-# Takeoff Coach 5.6.0 CVar audit
+# Takeoff Coach 5.7.0 CVar audit
 
-CVar | literal references in TakeoffCoach.cpp
---- | ---
+Literal reference counts in TakeoffCoach.cpp (registration included):
 tc_objective | 4
 tc_setup_preset | 4
 tc_guidance_style | 5
 tc_auto_load_matching_setup | 4
-tc_max_bounces | 5
-tc_reaction_allowance_ms | 11
+tc_max_bounces | 8
+tc_reaction_allowance_ms | 10
 tc_hide_timing_before_cue | 4
 tc_hide_alignment_before_cue | 4
 tc_hide_ball_marker_before_cue | 4
@@ -45,10 +44,10 @@ tc_ball_direction_min | 4
 tc_ball_direction_max | 4
 tc_contact_min | 4
 tc_fast_use_descending_only | 2
-tc_contact_max | 4
+tc_contact_max | 2
 tc_solver_hz | 4
-tc_prediction_timestep | 4
-tc_prediction_horizon | 4
+tc_prediction_timestep | 6
+tc_prediction_horizon | 5
 tc_ball_restitution | 4
 tc_tangential_damping | 4
 tc_reject_unsupported_geometry | 2
@@ -73,9 +72,9 @@ tc_min_initial_jump_delay_ms | 6
 tc_target_height_min | 7
 tc_target_height_max | 7
 tc_height_yellow_margin | 5
-tc_height_display_margin | 5
 tc_show_hud | 4
 tc_show_numbers | 5
+tc_show_indicators | 4
 tc_show_timing | 4
 tc_show_alignment | 4
 tc_show_height | 4
