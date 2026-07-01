@@ -12,7 +12,7 @@
 BAKKESMOD_PLUGIN(
     TakeoffCoach,
     "Takeoff Coach",
-    "5.2.0 Functional Baseline",
+    "5.5.0 Coherent Profiles",
     PLUGINTYPE_FREEPLAY
 )
 
@@ -66,7 +66,7 @@ void TakeoffCoach::onLoad()
             renderHud(canvas);
         });
 
-    cvarManager->log("Takeoff Coach 5.2 Functional Baseline loaded.");
+    cvarManager->log("Takeoff Coach 5.5.0 Coherent Profiles loaded.");
 }
 
 void TakeoffCoach::onUnload()
@@ -86,6 +86,8 @@ void TakeoffCoach::registerCvars()
     reg("tc_objective", "1", 0.0f, 1.0f);
     reg("tc_setup_preset", "0", 0.0f, 2.0f);
     reg("tc_guidance_style", "0", 0.0f, 1.0f);
+    reg("tc_auto_load_matching_setup", "1", 0.0f, 1.0f);
+    reg("tc_max_bounces", "0", 0.0f, 8.0f);
     reg("tc_reaction_allowance_ms", "100", 0.0f, 400.0f);
     reg("tc_hide_timing_before_cue", "1", 0.0f, 1.0f);
     reg("tc_hide_alignment_before_cue", "1", 0.0f, 1.0f);
@@ -172,7 +174,7 @@ void TakeoffCoach::registerCvars()
     reg("tc_show_height", "1", 0.0f, 1.0f);
     reg("tc_hud_position", "0", 0.0f, 2.0f);
     reg("tc_hud_opacity", "0.67", 0.2f, 1.0f);
-    reg("tc_indicator_text_scale", "1.00", 0.80f, 1.50f);
+    reg("tc_indicator_text_scale", "1.00", 1.00f, 1.50f);
 
     reg("tc_timing_green_early_ms", "90", 10.0f, 250.0f);
     reg("tc_timing_green_late_ms", "60", 10.0f, 250.0f);
@@ -414,7 +416,7 @@ void TakeoffCoach::startScenarioNow(uint64_t generation)
     attempt_.candidateTarget = validation.target;
     attempt_.validationCandidate = validation.reach;
     attempt_.solution = validation.reach;
-    attempt_.cueTime = validation.reach.idealJumpAbsolute;
+    attempt_.cueTime = validation.reach.idealJumpAbsolute - getFloat("tc_reaction_allowance_ms") / 1000.0f;
     attempt_.candidateCreatedAbsolute = attempt_.startedAt;
     attempt_.settledAt = attempt_.startedAt + getFloat("tc_initial_settle_time");
     attempt_.validationDeadline = attempt_.settledAt + getFloat("tc_setup_validation_delay");
@@ -451,24 +453,24 @@ void TakeoffCoach::startScenarioNow(uint64_t generation)
 
 bool TakeoffCoach::generateScenario(Scenario& scenario, ScenarioValidation& validation)
 {
+    scenario.objective = chooseObjective();
     const float setupAngle = sample("tc_setup_rotation_min", "tc_setup_rotation_max") * DEG_TO_RAD;
-    const Vector forward = rotate2D(Vector{1.0f, 0.0f, 0.0f}, setupAngle);
-    const Vector side{-forward.Y, forward.X, 0.0f};
+    const Vector sceneForward = rotate2D(Vector{1.0f, 0.0f, 0.0f}, setupAngle);
+    const Vector sceneSide{-sceneForward.Y, sceneForward.X, 0.0f};
 
-    const float distance = sample("tc_distance_min", "tc_distance_max");
+    const float distance = std::max(350.0f, sample("tc_distance_min", "tc_distance_max"));
     const float lateral = sample("tc_lateral_min", "tc_lateral_max");
     const float ballHeight = sample("tc_ball_height_min", "tc_ball_height_max");
-    const float facingOffset = sample("tc_car_facing_min", "tc_car_facing_max") * DEG_TO_RAD;
-    const Vector facing = rotate2D(forward, facingOffset);
-    const float carSpeed = sample("tc_car_speed_min", "tc_car_speed_max");
-    const float carVelocityAngle = sample("tc_car_velocity_angle_min", "tc_car_velocity_angle_max") * DEG_TO_RAD;
-    const Vector carVelocityDirection = rotate2D(facing, carVelocityAngle);
     const float ballSpeed = sample("tc_ball_speed_min", "tc_ball_speed_max");
     float ballVertical = sample("tc_ball_vertical_min", "tc_ball_vertical_max");
     const float ballDirection = sample("tc_ball_direction_min", "tc_ball_direction_max") * DEG_TO_RAD;
-    const Vector ballHorizontalDirection = rotate2D(forward, ballDirection);
+    const Vector ballHorizontalDirection = rotate2D(sceneForward, ballDirection);
 
-    scenario.objective = chooseObjective();
+    scenario.ballPosition = sceneForward * 200.0f + sceneSide * (0.35f * lateral);
+    scenario.ballPosition.Z = ballHeight;
+    scenario.ballVelocity = ballHorizontalDirection * ballSpeed + Vector{0.0f, 0.0f, ballVertical};
+    scenario.goalSign = sceneForward.Y >= 0.0f ? 1 : -1;
+
     if (scenario.objective == Objective::Shoot && ballVertical > 0.0f)
     {
         constexpr float highestAllowedCenter = 2044.0f - 92.75f - 15.0f;
@@ -478,21 +480,60 @@ bool TakeoffCoach::generateScenario(Scenario& scenario, ScenarioValidation& vali
         {
             const float low = std::min(getFloat("tc_ball_vertical_min"), safeVz);
             const float high = std::min(getFloat("tc_ball_vertical_max"), safeVz);
-            if (high < low || safeVz < 50.0f)
-                return false;
+            if (high < low || safeVz < 50.0f) return false;
             std::uniform_real_distribution<float> safeVertical(low, high);
             ballVertical = safeVertical(rng_);
+            scenario.ballVelocity.Z = ballVertical;
         }
     }
 
-    scenario.carPosition = forward * (-distance) + side * (-0.2f * lateral);
+    float minHeight = getFloat("tc_target_height_min");
+    float maxHeight = getFloat("tc_target_height_max");
+    if (minHeight > maxHeight) std::swap(minHeight, maxHeight);
+    const float minContact = getFloat("tc_contact_min");
+    const float maxContact = getFloat("tc_contact_max");
+    Vector contact{};
+    bool foundContact = false;
+    for (float t = minContact; t <= maxContact; t += 1.0f / 120.0f)
+    {
+        const Vector p = scenario.ballPosition + scenario.ballVelocity * t + Vector{0.0f, 0.0f, 0.5f * GRAVITY_Z * t * t};
+        const float vz = scenario.ballVelocity.Z + GRAVITY_Z * t;
+        if (p.Z >= minHeight && p.Z <= maxHeight &&
+            (scenario.objective == Objective::FastTouch || vz < 0.0f) &&
+            p.Z < 1951.0f && p.Z > 93.0f && std::abs(p.X) < 3900.0f && std::abs(p.Y) < 5000.0f)
+        {
+            contact = p;
+            foundContact = true;
+            break;
+        }
+    }
+    if (!foundContact) return false;
+
+    Vector desiredCarContact{};
+    if (scenario.objective == Objective::Shoot)
+    {
+        const Vector goalPoint{0.0f, static_cast<float>(scenario.goalSign) * 5120.0f, 320.0f};
+        const Vector goalDirection = normalized2D(goalPoint - contact);
+        desiredCarContact = contact - goalDirection * 145.0f - Vector{0.0f, 0.0f, 45.0f};
+    }
+    else
+    {
+        desiredCarContact = contact - sceneForward * 145.0f - Vector{0.0f, 0.0f, 45.0f};
+    }
+
+    const Vector approachSide{-sceneForward.Y, sceneForward.X, 0.0f};
+    scenario.carPosition = desiredCarContact - sceneForward * distance + approachSide * lateral;
     scenario.carPosition.Z = 17.0f;
-    scenario.carVelocity = carVelocityDirection * carSpeed;
-    scenario.ballPosition = forward * 200.0f + side * lateral;
-    scenario.ballPosition.Z = ballHeight;
-    scenario.ballVelocity = ballHorizontalDirection * ballSpeed + Vector{0.0f, 0.0f, ballVertical};
+    if (std::abs(scenario.carPosition.X) > 3900.0f || std::abs(scenario.carPosition.Y) > 5000.0f) return false;
+
+    const Vector route = normalized2D(desiredCarContact - scenario.carPosition);
+    const float facingOffset = sample("tc_car_facing_min", "tc_car_facing_max") * DEG_TO_RAD;
+    const float velocityOffset = sample("tc_car_velocity_angle_min", "tc_car_velocity_angle_max") * DEG_TO_RAD;
+    const Vector facing = rotate2D(route, facingOffset);
+    const Vector velocityDirection = rotate2D(route, velocityOffset);
+    const float carSpeed = sample("tc_car_speed_min", "tc_car_speed_max");
+    scenario.carVelocity = velocityDirection * carSpeed;
     scenario.carRotation = Rotator{0, static_cast<int>(std::atan2(facing.Y, facing.X) * 32768.0f / PI), 0};
-    scenario.goalSign = forward.Y >= 0.0f ? 1 : -1;
 
     validation = validateScenario(scenario);
     return validation.valid;
@@ -760,7 +801,7 @@ void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
                     attempt_.candidateTarget = selectContactTarget(car, attempt_.ballPath, now, &attempt_.validationCandidate);
                     attempt_.candidateCreatedAbsolute = now;
                     attempt_.solution = attempt_.validationCandidate;
-                    attempt_.cueTime = attempt_.validationCandidate.idealJumpAbsolute;
+                    attempt_.cueTime = attempt_.validationCandidate.idealJumpAbsolute - getFloat("tc_reaction_allowance_ms") / 1000.0f;
                 }
                 attempt_.initialCandidateTime = now;
                 attempt_.initialAvailableJumpDelay = attempt_.validationCandidate.jumpDelay;
@@ -798,7 +839,7 @@ void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
                     if (attempt_.validationCandidate.valid &&
                         attempt_.initialAvailableJumpDelay < getFloat("tc_min_initial_jump_delay_ms") / 1000.0f)
                         attempt_.validationCandidate = Solution{};
-                    attempt_.cueTime = attempt_.validationCandidate.idealJumpAbsolute;
+                    attempt_.cueTime = attempt_.validationCandidate.idealJumpAbsolute - getFloat("tc_reaction_allowance_ms") / 1000.0f;
                 }
             }
 
@@ -815,7 +856,7 @@ void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
                 attempt_.validationState = ValidationState::Locked;
                 attempt_.targetLockedAbsolute = now;
                 attempt_.lockedContactAbsolute = attempt_.lockedTarget.contactAbsoluteTime;
-                attempt_.cueTime = attempt_.lockedSolution.idealJumpAbsolute;
+                attempt_.cueTime = attempt_.lockedSolution.idealJumpAbsolute - getFloat("tc_reaction_allowance_ms") / 1000.0f;
                 clearAutomaticRerollLatch();
             }
 
@@ -940,7 +981,7 @@ void TakeoffCoach::finishAttempt(
 {
     attempt_.touched = touched;
     attempt_.scored = scored;
-    attempt_.contactHeight = ball.GetLocation().Z;
+    if (touched) attempt_.contactHeight = ball.GetLocation().Z;
     attempt_.phase = Phase::Feedback;
     attempt_.feedbackUntil = now + getFloat("tc_feedback_seconds");
 
@@ -952,9 +993,8 @@ void TakeoffCoach::finishAttempt(
 
     if (attempt_.predictedBounceMismatch)
     {
-        attempt_.headline = "TIMING INVALID: WALL OR CEILING BOUNCE";
-        attempt_.correction =
-            "This attempt is not graded because the locked prediction did not include that bounce.";
+        attempt_.headline = "TIMING —";
+        attempt_.correction = "Path changed.";
     }
     else if (timing < -greenEarly)
     {
@@ -1246,9 +1286,10 @@ TakeoffCoach::ContactTarget TakeoffCoach::selectContactTarget(
         const float delay = slice.absoluteTime - now;
         if (delay < minContact || delay > maxContact) continue;
         if (!slice.supportedGeometry && getBool("tc_reject_unsupported_geometry")) break;
+        if (slice.bounceCount > getInt("tc_max_bounces")) continue;
         if (slice.position.Z < minHeight || slice.position.Z > maxHeight) continue;
         const bool preBounce = slice.bounceCount == 0;
-        if (!preBounce && !getBool("tc_allow_post_bounce_fallback")) continue;
+        if (!preBounce && getInt("tc_max_bounces") <= 0) continue;
         const bool descending = slice.velocity.Z < 0.0f;
         if (attempt_.objective == Objective::Shoot && !descending) continue;
         if (attempt_.objective == Objective::FastTouch && getBool("tc_fast_use_descending_only") && !descending) continue;
@@ -1687,8 +1728,9 @@ void TakeoffCoach::renderHud(CanvasWrapper canvas)
         }
     }
 
+    const bool heightAvailable = !feedback || attempt_.touched;
     const float actualHeight =
-        feedback
+        (feedback && attempt_.touched)
         ? attempt_.contactHeight
         : liveBallHeight;
 
@@ -1753,7 +1795,7 @@ void TakeoffCoach::renderHud(CanvasWrapper canvas)
             canvas,
             gaugeOrigin(gaugeIndex++),
             "HEIGHT",
-            format0(actualHeight) + " uu",
+            (heightAvailable ? format0(actualHeight) + " uu" : "n/a"),
             heightError,
             halfGreen,
             halfGreen,
@@ -2060,7 +2102,7 @@ void TakeoffCoach::drawGauge(
         Vector2{markerX + 7, origin.Y - 1});
 
     const float textScale =
-        getFloat("tc_indicator_text_scale");
+        std::max(1.0f, getFloat("tc_indicator_text_scale"));
 
     canvas.SetPosition(
         Vector2{origin.X, origin.Y + 27});
@@ -2076,6 +2118,11 @@ void TakeoffCoach::drawGauge(
 
 void TakeoffCoach::RenderSettings()
 {
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.FrameRounding = 6.0f;
+    style.GrabRounding = 6.0f;
+    style.ChildRounding = 8.0f;
+    style.PopupRounding = 6.0f;
     ImGui::TextUnformatted("Takeoff Coach build: 5.4.0-validation-recovery");
     if (ImGui::BeginTabBar("TakeoffCoachTabs"))
     {
@@ -2188,7 +2235,17 @@ void TakeoffCoach::renderDrillTab()
     {
         setValue("tc_objective", objective);
         clearAutomaticRerollLatch();
+        if (getBool("tc_auto_load_matching_setup"))
+            applyPreset(objective == static_cast<int>(Objective::Shoot) ? 0 : 1);
     }
+
+    bool autoLoadSetup = getBool("tc_auto_load_matching_setup");
+    if (ImGui::Checkbox("Auto-load matching setup when changing mode", &autoLoadSetup))
+        setValue("tc_auto_load_matching_setup", autoLoadSetup);
+
+    int maxBounces = getInt("tc_max_bounces");
+    if (ImGui::SliderInt("Maximum bounces", &maxBounces, 0, 8))
+        setValue("tc_max_bounces", maxBounces);
 
     int guidance = getInt("tc_guidance_style");
     const char* guidanceModes[] = {"Read", "Reaction Cue"};
@@ -2374,7 +2431,7 @@ void TakeoffCoach::renderFeedbackTab()
     if (ImGui::SliderFloat("Panel opacity", &opacity, 0.2f, 1.0f, "%.2f"))
         setValue("tc_hud_opacity", opacity);
 
-    float textScale = getFloat("tc_indicator_text_scale");
+    float textScale = std::max(1.0f, getFloat("tc_indicator_text_scale"));
     if (ImGui::SliderFloat("Indicator text size", &textScale, 0.80f, 1.50f, "%.2f"))
         setValue("tc_indicator_text_scale", textScale);
 

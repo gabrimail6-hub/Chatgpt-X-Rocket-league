@@ -6,6 +6,3 @@ dist/
 *.obj
 *.dll
 *.pdb
-*.ilk
-*.exp
-*.lib

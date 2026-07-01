@@ -1,14 +1,12 @@
 # Changelog
 
-## 5.4.0 — Validation and recovery
-
-- Manual **New Scenario** now clears the automatic-reroll latch and invalidates stale callbacks.
-- Automatic rerolls stop recoverably and instruct the user to press New Scenario.
-- Scenario generation now validates a pre-collision target before applying the setup.
-- Shoot vertical velocity is resampled against available ceiling headroom.
-- Shoot accepts only descending, in-band, pre-collision targets by default.
-- Generated target and initial reach estimate seed runtime verification instead of being discarded.
-- Target contact height is global and no longer stored in Fast/Shoot setup memory.
-- Ball-centre target-height UI is explicitly 93–1951 uu.
-- Solver/Advanced and Diagnostics are hidden from the production settings UI.
-- The working reaction cue and Fast/Shoot setup memories are preserved.
+## 5.5.0
+- Advanced reaction cue by the human allowance while retaining physical timing zero.
+- Reworked Fast Touch and Shoot generation around coherent interception routes.
+- Added working maximum-bounces selection limit, default 0.
+- Restored optional automatic setup loading on objective change, enabled by default.
+- Height freezes only on a valid touch; misses do not create a frozen height result.
+- Indicator text scale now has a hard 1.00 minimum.
+- Added rounded ImGui controls.
+- Replaced verbose path-change timing failure with a compact state.
+- Removed the obsolete installer command from source and build artifacts.
