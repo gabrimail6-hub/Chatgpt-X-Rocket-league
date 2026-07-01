@@ -29,7 +29,8 @@ private:
     enum class Objective : int
     {
         FastTouch = 0,
-        Shoot = 1
+        Shoot = 1,
+        FullRandom = 2
     };
 
     enum class SurfaceType : int

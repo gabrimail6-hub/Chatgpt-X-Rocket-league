@@ -1,3 +1,14 @@
+# 5.6.0 — Safety + Full Random
+
+- Added Full Random mode and setup memory with the full wide ranges requested.
+- Added signed car speed down to -1800 uu/s.
+- Removed Car velocity angle from code, config, presets, and UI.
+- Shoot vertical-speed minimum is now 0 uu/s.
+- Increased reaction allowance limit to 1000 ms.
+- Added a 0–3000 ms minimum cue-lead safety setting, default 750 ms; Reaction allowance is added to the accepted jump delay.
+- Added rounded HUD panel and cue rectangles.
+- Kept maximum-bounce and auto-load matching setup behavior.
+
 # Changelog
 
 ## 5.5.0
