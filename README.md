@@ -1,26 +1,25 @@
-# Takeoff Coach 5.0 Vector
+# Takeoff Coach 5.1 Vector Runtime Fix
 
-A BakkesMod freeplay plugin with exactly two objectives: **Fast Touch** and **Shoot**.
+BakkesMod freeplay drill for two objectives: **Fast Touch** and **Shoot**.
 
-The Vector pipeline predicts one native ball path at a fixed timestep, selects one `ContactTarget`, and uses that same locked target for the contact marker, aerial timing, takeoff marker, cue, alignment, grading, and shot evaluation. Supported prediction surfaces include the floor, ceiling, side/back walls, diagonal corners, goal interior, posts, and crossbar approximations. Bounce policy and maximum bounce count are configurable.
+## Runtime systems
 
-## Guidance
-
-**Read** displays timing, alignment, contact, and takeoff guidance. **Reaction Cue** renders a red lamp before the ideal first-jump time and a green lamp at the cue. The first jump edge freezes the target and takeoff direction, records raw reaction time, subtracts the configured allowance (100 ms by default), and reports reaction loss and possible time saved.
-
-## Objectives
-
-- **Fast Touch** ignores both goals and prioritizes the earliest useful reachable touch, with configurable contact height and bounce allowance.
-- **Shoot** chooses the correct attacking goal, supports centre/near-post/far-post/random/custom aim, estimates outgoing direction and speed, rejects contacts outside the goal corridor, and continues tracking after contact to detect a goal.
-
-## Solver
-
-The bounded human aerial solver tests single jump, fast aerial, delayed second jump, jump-hold, boost-delay, pitch-delay, and conservative profile variants. It outputs the latest viable jump, aerial duration, takeoff position/direction, boost estimate, and robustness.
-
-## Presets
-
-The Setup tab provides **Shoot Default**, **Fast Touch Default**, and **Custom**, with load, reset, copy-to-Custom, and save-current-to-Custom controls. Built-in defaults remain recoverable.
+- Reaction grading only runs in Reaction Cue guidance.
+- Cue time, target, and solution freeze on the first green cue frame.
+- Candidate targets appear immediately and lock as soon as the configured stable time is satisfied; the verification window is a timeout, not a mandatory delay.
+- Fast Touch ranks only reachable useful contacts. Shoot ranks only reachable contacts whose estimated outgoing ball path crosses the selected goal corridor.
+- One stored contact target drives timing, alignment, ball marker, takeoff marker, cue, and grading.
+- Ball prediction stores persistent last-bounce classification, uses one collision response per bounded substep, proper normal/tangent decomposition, approximate spin coupling, and rejects unsupported curved-transition regions.
+- Touch and goal hooks are used first, with geometric/position fallbacks.
+- Session statistics use separate grading denominators.
+- Shoot Default, Fast Touch Default, and Custom store full functional settings. Objective changes do not overwrite settings unless auto-load is enabled.
 
 ## Build
 
-The Visual Studio project targets C++20 x64 and uses the BakkesMod SDK path supplied through `BAKKESMOD_SDK`. GitHub Actions builds all repository-owned `.cpp` files and packages the DLL and default config.
+GitHub Actions builds x64 C++20 with warnings treated as errors for repository-owned code. BakkesMod SDK headers are treated as external headers.
+
+The workflow artifact contains:
+
+- `TakeoffCoach.dll`
+- `takeoffcoach.cfg`
+- `install_takeoffcoach.command`

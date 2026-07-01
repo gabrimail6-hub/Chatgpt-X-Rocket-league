@@ -59,6 +59,15 @@ private:
         ReactionCue = 1
     };
 
+    enum class TargetPolicy : int
+    {
+        EarliestReachable = 0,
+        EarliestAboveMinimum = 1,
+        ConfiguredHeightBand = 2,
+        DescendingCrossbar = 3,
+        RandomReachable = 4
+    };
+
     enum class Phase
     {
         Idle,
@@ -79,6 +88,15 @@ private:
         int goalSign = 1;
     };
 
+    struct BounceEvent
+    {
+        float absoluteTime = 0.0f;
+        Vector position{};
+        Vector incomingVelocity{};
+        Vector outgoingVelocity{};
+        SurfaceType surface = SurfaceType::None;
+    };
+
     struct BallPredictionSlice
     {
         float absoluteTime = 0.0f;
@@ -86,8 +104,16 @@ private:
         Vector velocity{};
         Vector angularVelocity{};
         int bounceCount = 0;
-        SurfaceType surface = SurfaceType::None;
+        SurfaceType lastBounceSurface = SurfaceType::None;
         bool supportedGeometry = true;
+    };
+
+    struct TakeoffState
+    {
+        Vector position{};
+        Vector velocity{};
+        Vector facingDirection{};
+        float absoluteTime = 0.0f;
     };
 
     struct ContactTarget
@@ -120,6 +146,9 @@ private:
         Vector contactPoint{};
         Vector requiredDirection{};
         Vector idealTakeoffPosition{};
+        TakeoffState takeoff{};
+        float carContactError = 0.0f;
+        bool boostDeficit = false;
         AerialProfile profile = AerialProfile::FastAerial;
         ContactTarget target{};
     };
@@ -143,7 +172,10 @@ private:
         bool everHadSolution = false;
         bool targetLocked = false;
         bool allowUnreachable = false;
-        bool invalidNonGroundBounce = false;
+        bool cueTriggered = false;
+        bool touchEventSeen = false;
+        bool goalEventSeen = false;
+        bool predictedBounceMismatch = false;
 
         float startedAt = 0.0f;
         float jumpAt = 0.0f;
@@ -165,14 +197,18 @@ private:
         float initialCandidateTime = 0.0f;
         float initialAvailableJumpDelay = 0.0f;
         float cueTime = 0.0f;
+        float frozenCueTime = 0.0f;
         float reactionRawMs = 0.0f;
-        float reactionAfterAllowanceMs = 0.0f;
+        float reactionAllowanceMs = 0.0f;
+        float reactionLossMs = 0.0f;
+        float actualTouchAbsolute = 0.0f;
         float possibleTimeSavedMs = 0.0f;
-        bool cueShown = false;
         bool reactionCaptured = false;
+        bool targetReachableAfterJump = false;
         Vector snapshotBallPosition{};
         Vector snapshotBallVelocity{};
         std::vector<BallPredictionSlice> ballPath;
+        std::vector<BounceEvent> bounceEvents;
         ContactTarget candidateTarget{};
         ContactTarget lockedTarget{};
 
@@ -186,8 +222,12 @@ private:
         int attempts = 0;
         int touches = 0;
         int goals = 0;
+        int gradedTimingCount = 0;
+        int gradedAngleCount = 0;
+        int reactionCount = 0;
+        int possibleSavedCount = 0;
         double absTimingTotal = 0.0;
-        double angleTotal = 0.0;
+        double absoluteAngleTotal = 0.0;
         double possibleSavedTotal = 0.0;
         double touchHeightTotal = 0.0;
         double contactSpeedTotal = 0.0;
@@ -208,6 +248,8 @@ private:
     bool isScenarioSafe(Scenario scenario) const;
 
     void onVehicleInput(CarWrapper car, void* params, std::string eventName);
+    void onBallTouchEvent(std::string eventName);
+    void onGoalEvent(std::string eventName);
     void updateAttempt(CarWrapper car, float now);
     void updateReading(CarWrapper car, BallWrapper ball, float now);
     void updateAirborne(CarWrapper car, BallWrapper ball, float now);
@@ -215,9 +257,10 @@ private:
 
     Solution solve(CarWrapper car, BallWrapper ball, float now);
     Solution solveLockedTarget(CarWrapper car, float now) const;
-    std::vector<BallPredictionSlice> buildBallPath(Vector position, Vector velocity, Vector angularVelocity, float now) const;
-    bool collideBall(Vector& position, Vector& velocity, float radius, SurfaceType& surface) const;
-    ContactTarget selectContactTarget(CarWrapper car, const std::vector<BallPredictionSlice>& path, float now) const;
+    std::vector<BallPredictionSlice> buildBallPath(Vector position, Vector velocity, Vector angularVelocity, float now);
+    bool collideBall(Vector& position, Vector& velocity, Vector& angularVelocity, float radius, SurfaceType& surface) const;
+    bool isUnsupportedTransition(const Vector& position, float radius) const;
+    ContactTarget selectContactTarget(CarWrapper car, const std::vector<BallPredictionSlice>& path, float now, Solution* selectedSolution = nullptr) const;
     Solution solveTargetWithProfiles(CarWrapper car, const ContactTarget& target, float now) const;
     bool simulateAerialProfile(CarWrapper car, const ContactTarget& target, AerialProfile profile, float duration, Solution& out) const;
     bool samplePath(float absoluteTime, BallPredictionSlice& out) const;
@@ -267,6 +310,9 @@ private:
     static std::string objectiveName(Objective objective);
 
     static float clamp(float value, float low, float high);
+    static float dot(const Vector& a, const Vector& b);
+    static Vector cross(const Vector& a, const Vector& b);
+    static Vector normalized(const Vector& value);
     static float length(const Vector& value);
     static float length2D(const Vector& value);
     static Vector normalized2D(const Vector& value);
