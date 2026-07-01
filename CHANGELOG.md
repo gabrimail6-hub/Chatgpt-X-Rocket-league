@@ -1,3 +1,8 @@
+## 5.0.1 - CI warning boundary fix
+
+- Treat BakkesMod SDK headers as external system headers so `/WX` applies to repository-owned code without failing on SDK warnings.
+- Removed the unused preset parameter warning in `saveModePreset`.
+
 # Changelog
 
 ## 5.0.0 Vector

@@ -1807,7 +1807,7 @@ namespace
     }
 }
 
-void TakeoffCoach::saveModePreset(int preset)
+void TakeoffCoach::saveModePreset(int /*preset*/)
 {
     // The two built-ins are intentionally immutable. Saving always targets Custom.
     const std::string prefix = modePrefix(2);
