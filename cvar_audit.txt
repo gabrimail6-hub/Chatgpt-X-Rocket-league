@@ -1,222 +1,175 @@
-Takeoff Coach 5.2 cvar audit
-REGISTERED | READ BY RUNTIME | EDITED BY UI | SAVED BY PRESET | USED | OCCURRENCES
-tc_objective | YES | YES | YES | YES | 5
-tc_setup_preset | YES | YES | YES | YES | 5
-tc_guidance_style | YES | YES | YES | YES | 4
-tc_reaction_allowance_ms | YES | YES | YES | YES | 5
-tc_hide_timing_before_cue | YES | YES | NO | YES | 4
-tc_hide_alignment_before_cue | YES | YES | NO | YES | 4
-tc_hide_ball_marker_before_cue | YES | YES | NO | YES | 4
-tc_hide_takeoff_marker_before_cue | YES | YES | NO | YES | 4
-tc_markers_visible_before_cue | YES | YES | NO | YES | 4
-tc_show_reaction_cue | YES | YES | NO | YES | 4
-tc_cue_width | YES | YES | NO | YES | 4
-tc_cue_height | YES | YES | NO | YES | 4
-tc_cue_position_x | YES | YES | NO | YES | 4
-tc_cue_position_y | YES | YES | NO | YES | 4
-tc_cue_red_r | YES | NO | NO | YES | 2
-tc_cue_red_g | YES | NO | NO | YES | 2
-tc_cue_red_b | YES | NO | NO | YES | 2
-tc_cue_green_r | YES | NO | NO | YES | 2
-tc_cue_green_g | YES | NO | NO | YES | 2
-tc_cue_green_b | YES | NO | NO | YES | 2
-tc_reaction_target_policy_fast | YES | YES | YES | YES | 5
-tc_reaction_target_policy_shoot | YES | YES | YES | YES | 5
-tc_auto_reset | YES | YES | NO | YES | 4
-tc_feedback_seconds | YES | YES | NO | YES | 4
-tc_distance_min | YES | YES | YES | YES | 4
-tc_distance_max | YES | YES | YES | YES | 4
-tc_lateral_min | YES | YES | YES | YES | 4
-tc_lateral_max | YES | YES | YES | YES | 4
-tc_ball_height_min | YES | YES | YES | YES | 4
-tc_ball_height_max | YES | YES | YES | YES | 4
-tc_setup_rotation_min | YES | YES | YES | YES | 4
-tc_setup_rotation_max | YES | YES | YES | YES | 4
-tc_car_facing_min | YES | YES | YES | YES | 4
-tc_car_facing_max | YES | YES | YES | YES | 4
-tc_car_speed_min | YES | YES | YES | YES | 4
-tc_car_speed_max | YES | YES | YES | YES | 4
-tc_car_velocity_angle_min | YES | YES | YES | YES | 4
-tc_car_velocity_angle_max | YES | YES | YES | YES | 4
-tc_ball_speed_min | YES | YES | YES | YES | 4
-tc_ball_speed_max | YES | YES | YES | YES | 4
-tc_ball_vertical_min | YES | YES | YES | YES | 4
-tc_ball_vertical_max | YES | YES | YES | YES | 4
-tc_ball_direction_min | YES | YES | YES | YES | 4
-tc_ball_direction_max | YES | YES | YES | YES | 4
-tc_contact_min | YES | NO | NO | YES | 2
-tc_target_policy_read | YES | YES | YES | YES | 3
-tc_fast_use_descending_only | YES | GENERIC PRESET UI | YES | YES | 2
-tc_contact_max | YES | NO | NO | YES | 3
-tc_solver_hz | YES | YES | NO | YES | 4
-tc_prediction_timestep | YES | YES | NO | YES | 5
-tc_prediction_horizon | YES | YES | NO | YES | 4
-tc_ball_restitution | YES | YES | NO | YES | 4
-tc_tangential_damping | YES | YES | NO | YES | 4
-tc_bounce_policy | YES | YES | YES | YES | 5
-tc_max_bounces | YES | YES | YES | YES | 6
-tc_prefer_prebounce | YES | YES | YES | YES | 6
-tc_reject_unsupported_geometry | YES | NO | NO | YES | 2
-tc_initial_settle_time | YES | YES | YES | YES | 5
-tc_allowed_failed_samples | YES | YES | YES | YES | 3
-tc_max_path_corrections | YES | YES | YES | YES | 3
-tc_profile_single_jump | YES | YES | NO | YES | 4
-tc_profile_fast_aerial | YES | YES | NO | YES | 4
-tc_profile_delayed_second | YES | YES | NO | YES | 4
-tc_profile_conservative | YES | YES | NO | YES | 4
-tc_robustness_margin | YES | NO | NO | YES | 2
-tc_horizontal_calibration | YES | NO | NO | YES | 3
-tc_vertical_calibration | YES | NO | NO | YES | 4
-tc_ball_path_position_tolerance | YES | YES | YES | YES | 7
-tc_ball_path_velocity_tolerance | YES | YES | YES | YES | 7
-tc_car_contact_tolerance | YES | YES | NO | YES | 5
-tc_takeoff_marker_tolerance | YES | YES | NO | YES | 3
-tc_require_available_boost | YES | YES | NO | YES | 4
-tc_allow_boost_deficit | YES | YES | NO | YES | 4
-tc_auto_load_matching_preset | YES | YES | NO | YES | 4
-tc_rank_weight_time | YES | NO | NO | YES | 2
-tc_rank_weight_aim | YES | NO | NO | YES | 2
-tc_rank_weight_speed | YES | NO | NO | YES | 2
-tc_rank_weight_correction | YES | NO | NO | YES | 2
-tc_rank_weight_bounce | YES | NO | NO | YES | 2
-tc_rank_weight_robustness | YES | NO | NO | YES | 2
-tc_solver_backend | YES | NO | NO | YES | 2
-tc_max_candidate_count | YES | NO | NO | YES | 2
-tc_max_profile_simulations | YES | NO | NO | YES | 3
-tc_max_initial_solve_ms | YES | NO | NO | YES | 2
-tc_takeoff_confidence_min | YES | NO | NO | YES | 2
-tc_unreachable_setup_chance | YES | NO | NO | YES | 2
-tc_setup_validation_delay | YES | YES | YES | YES | 5
-tc_validation_stable_time | YES | YES | YES | YES | 5
-tc_max_setup_rejections | YES | NO | NO | YES | 2
-tc_min_initial_jump_delay_ms | YES | NO | NO | YES | 3
-tc_target_height_min | YES | YES | YES | YES | 6
-tc_target_height_max | YES | YES | YES | YES | 6
-tc_height_yellow_margin | YES | YES | NO | YES | 5
-tc_height_display_margin | YES | YES | NO | YES | 5
-tc_show_hud | YES | YES | NO | YES | 4
-tc_show_numbers | YES | YES | NO | YES | 5
-tc_show_timing | YES | YES | NO | YES | 4
-tc_show_alignment | YES | YES | NO | YES | 4
-tc_show_height | YES | YES | NO | YES | 4
-tc_hud_position | YES | YES | NO | YES | 4
-tc_hud_opacity | YES | YES | NO | YES | 4
-tc_indicator_text_scale | YES | YES | NO | YES | 4
-tc_timing_green_early_ms | YES | YES | NO | YES | 6
-tc_timing_green_late_ms | YES | YES | NO | YES | 6
-tc_timing_yellow_early_ms | YES | YES | NO | YES | 4
-tc_timing_yellow_late_ms | YES | YES | NO | YES | 4
-tc_timing_display_early_ms | YES | YES | NO | YES | 4
-tc_timing_display_late_ms | YES | YES | NO | YES | 5
-tc_green_alignment | YES | YES | NO | YES | 6
-tc_yellow_alignment | YES | YES | NO | YES | 5
-tc_alignment_display | YES | YES | NO | YES | 6
-tc_color_red_r | YES | YES | NO | YES | 5
-tc_color_red_g | YES | YES | NO | YES | 5
-tc_color_red_b | YES | YES | NO | YES | 5
-tc_color_yellow_r | YES | YES | NO | YES | 5
-tc_color_yellow_g | YES | YES | NO | YES | 5
-tc_color_yellow_b | YES | YES | NO | YES | 5
-tc_color_green_r | YES | YES | NO | YES | 5
-tc_color_green_g | YES | YES | NO | YES | 5
-tc_color_green_b | YES | YES | NO | YES | 5
-tc_show_contact_marker | YES | YES | NO | YES | 4
-tc_marker_color_r | YES | YES | NO | YES | 4
-tc_marker_color_g | YES | YES | NO | YES | 4
-tc_marker_color_b | YES | YES | NO | YES | 4
-tc_marker_candidate_r | YES | NO | NO | YES | 2
-tc_marker_candidate_g | YES | NO | NO | YES | 2
-tc_marker_candidate_b | YES | NO | NO | YES | 2
-tc_marker_shape | YES | NO | NO | YES | 2
-tc_marker_size | YES | NO | NO | YES | 2
-tc_marker_opacity | YES | NO | NO | YES | 2
-tc_marker_pulse | YES | NO | NO | YES | 2
-tc_marker_show_time | YES | NO | NO | YES | 2
-tc_marker_show_bounces | YES | NO | NO | YES | 2
-tc_marker_ground_projection | YES | NO | NO | YES | 2
-tc_show_takeoff_marker | YES | NO | NO | YES | 2
-tc_show_takeoff_arrow | YES | NO | NO | YES | 2
-tc_takeoff_marker_r | YES | NO | NO | YES | 2
-tc_takeoff_marker_g | YES | NO | NO | YES | 2
-tc_takeoff_marker_b | YES | NO | NO | YES | 2
-tc_takeoff_marker_size | YES | NO | NO | YES | 2
-tc_show_takeoff_line | YES | NO | NO | YES | 2
-tc_takeoff_arrow_length | YES | NO | NO | YES | 2
-tc_takeoff_line_thickness | YES | NO | NO | YES | 3
-tc_takeoff_candidate_r | YES | NO | NO | YES | 2
-tc_takeoff_candidate_g | YES | NO | NO | YES | 2
-tc_takeoff_candidate_b | YES | NO | NO | YES | 2
-tc_shoot_aim_mode | YES | YES | YES | YES | 3
-tc_shoot_custom_aim_x | YES | YES | YES | YES | 3
-tc_shoot_goal_height | YES | GENERIC PRESET UI | YES | YES | 4
-tc_shoot_max_aim_error | YES | YES | YES | YES | 3
-tc_shoot_score_speed | YES | GENERIC PRESET UI | YES | YES | 2
-tc_shoot_score_aim | YES | GENERIC PRESET UI | YES | YES | 2
-tc_shoot_distance_min | YES | YES | YES | YES | 2
-tc_shoot_distance_max | YES | YES | YES | YES | 2
-tc_shoot_lateral_min | YES | YES | YES | YES | 2
-tc_shoot_lateral_max | YES | YES | YES | YES | 2
-tc_shoot_ball_height_min | YES | YES | YES | YES | 2
-tc_shoot_ball_height_max | YES | YES | YES | YES | 2
-tc_shoot_target_height_min | YES | YES | YES | YES | 2
-tc_shoot_target_height_max | YES | YES | YES | YES | 2
-tc_shoot_setup_rotation_min | YES | YES | YES | YES | 2
-tc_shoot_setup_rotation_max | YES | YES | YES | YES | 2
-tc_shoot_car_facing_min | YES | YES | YES | YES | 2
-tc_shoot_car_facing_max | YES | YES | YES | YES | 2
-tc_shoot_car_speed_min | YES | YES | YES | YES | 2
-tc_shoot_car_speed_max | YES | YES | YES | YES | 2
-tc_shoot_car_velocity_angle_min | YES | YES | YES | YES | 2
-tc_shoot_car_velocity_angle_max | YES | YES | YES | YES | 2
-tc_shoot_ball_speed_min | YES | YES | YES | YES | 2
-tc_shoot_ball_speed_max | YES | YES | YES | YES | 2
-tc_shoot_ball_vertical_min | YES | YES | YES | YES | 2
-tc_shoot_ball_vertical_max | YES | YES | YES | YES | 2
-tc_shoot_ball_direction_min | YES | YES | YES | YES | 2
-tc_shoot_ball_direction_max | YES | YES | YES | YES | 2
-tc_fast_distance_min | YES | YES | YES | YES | 2
-tc_fast_distance_max | YES | YES | YES | YES | 2
-tc_fast_lateral_min | YES | YES | YES | YES | 2
-tc_fast_lateral_max | YES | YES | YES | YES | 2
-tc_fast_ball_height_min | YES | YES | YES | YES | 2
-tc_fast_ball_height_max | YES | YES | YES | YES | 2
-tc_fast_target_height_min | YES | YES | YES | YES | 2
-tc_fast_target_height_max | YES | YES | YES | YES | 2
-tc_fast_setup_rotation_min | YES | YES | YES | YES | 2
-tc_fast_setup_rotation_max | YES | YES | YES | YES | 2
-tc_fast_car_facing_min | YES | YES | YES | YES | 2
-tc_fast_car_facing_max | YES | YES | YES | YES | 2
-tc_fast_car_speed_min | YES | YES | YES | YES | 2
-tc_fast_car_speed_max | YES | YES | YES | YES | 2
-tc_fast_car_velocity_angle_min | YES | YES | YES | YES | 2
-tc_fast_car_velocity_angle_max | YES | YES | YES | YES | 2
-tc_fast_ball_speed_min | YES | YES | YES | YES | 2
-tc_fast_ball_speed_max | YES | YES | YES | YES | 2
-tc_fast_ball_vertical_min | YES | YES | YES | YES | 2
-tc_fast_ball_vertical_max | YES | YES | YES | YES | 2
-tc_fast_ball_direction_min | YES | YES | YES | YES | 2
-tc_fast_ball_direction_max | YES | YES | YES | YES | 2
-tc_custom_distance_min | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_distance_max | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_lateral_min | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_lateral_max | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_ball_height_min | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_ball_height_max | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_target_height_min | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_target_height_max | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_setup_rotation_min | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_setup_rotation_max | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_car_facing_min | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_car_facing_max | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_car_speed_min | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_car_speed_max | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_car_velocity_angle_min | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_car_velocity_angle_max | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_ball_speed_min | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_ball_speed_max | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_ball_vertical_min | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_ball_vertical_max | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_ball_direction_min | YES | GENERIC PRESET UI | YES | YES | 1
-tc_custom_ball_direction_max | YES | GENERIC PRESET UI | YES | YES | 1
+# CVar audit — 5.3.0-runtime-wiring
 
-UNINTENTIONAL REGISTERED-ONLY COUNT: 0
+tc_alignment_display: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_allow_post_bounce_fallback: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_allowed_failed_samples: REGISTERED, READ BY RUNTIME
+tc_auto_reset: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_ball_direction_max: REGISTERED
+tc_ball_direction_min: REGISTERED
+tc_ball_height_max: REGISTERED
+tc_ball_height_min: REGISTERED
+tc_ball_path_position_tolerance: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_ball_path_velocity_tolerance: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_ball_restitution: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_ball_speed_max: REGISTERED
+tc_ball_speed_min: REGISTERED
+tc_ball_vertical_max: REGISTERED
+tc_ball_vertical_min: REGISTERED
+tc_car_contact_tolerance: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_car_facing_max: REGISTERED
+tc_car_facing_min: REGISTERED
+tc_car_speed_max: REGISTERED
+tc_car_speed_min: REGISTERED
+tc_car_velocity_angle_max: REGISTERED
+tc_car_velocity_angle_min: REGISTERED
+tc_color_green_b: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_color_green_g: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_color_green_r: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_color_red_b: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_color_red_g: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_color_red_r: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_color_yellow_b: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_color_yellow_g: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_color_yellow_r: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_contact_max: REGISTERED, READ BY RUNTIME
+tc_contact_min: REGISTERED, READ BY RUNTIME
+tc_cue_green_b: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_cue_green_g: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_cue_green_r: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_cue_height: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_cue_position_x: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_cue_position_y: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_cue_red_b: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_cue_red_g: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_cue_red_r: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_cue_width: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_distance_max: REGISTERED
+tc_distance_min: REGISTERED
+tc_fast_ball_direction_max: REGISTERED, EDITED/SAVED
+tc_fast_ball_direction_min: REGISTERED, EDITED/SAVED
+tc_fast_ball_height_max: REGISTERED, EDITED/SAVED
+tc_fast_ball_height_min: REGISTERED, EDITED/SAVED
+tc_fast_ball_speed_max: REGISTERED, EDITED/SAVED
+tc_fast_ball_speed_min: REGISTERED, EDITED/SAVED
+tc_fast_ball_vertical_max: REGISTERED, EDITED/SAVED
+tc_fast_ball_vertical_min: REGISTERED, EDITED/SAVED
+tc_fast_car_facing_max: REGISTERED, EDITED/SAVED
+tc_fast_car_facing_min: REGISTERED, EDITED/SAVED
+tc_fast_car_speed_max: REGISTERED, EDITED/SAVED
+tc_fast_car_speed_min: REGISTERED, EDITED/SAVED
+tc_fast_car_velocity_angle_max: REGISTERED, EDITED/SAVED
+tc_fast_car_velocity_angle_min: REGISTERED, EDITED/SAVED
+tc_fast_distance_max: REGISTERED, EDITED/SAVED
+tc_fast_distance_min: REGISTERED, EDITED/SAVED
+tc_fast_lateral_max: REGISTERED, EDITED/SAVED
+tc_fast_lateral_min: REGISTERED, EDITED/SAVED
+tc_fast_setup_rotation_max: REGISTERED, EDITED/SAVED
+tc_fast_setup_rotation_min: REGISTERED, EDITED/SAVED
+tc_fast_target_height_max: REGISTERED, EDITED/SAVED
+tc_fast_target_height_min: REGISTERED, EDITED/SAVED
+tc_fast_use_descending_only: REGISTERED, READ BY RUNTIME
+tc_feedback_seconds: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_green_alignment: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_guidance_style: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_height_display_margin: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_height_yellow_margin: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_hide_alignment_before_cue: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_hide_ball_marker_before_cue: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_hide_takeoff_marker_before_cue: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_hide_timing_before_cue: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_horizontal_calibration: REGISTERED, READ BY RUNTIME
+tc_hud_opacity: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_hud_position: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_indicator_text_scale: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_initial_settle_time: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_lateral_max: REGISTERED
+tc_lateral_min: REGISTERED
+tc_marker_candidate_b: REGISTERED
+tc_marker_candidate_g: REGISTERED
+tc_marker_candidate_r: REGISTERED
+tc_marker_color_b: REGISTERED, READ BY RUNTIME
+tc_marker_color_g: REGISTERED, READ BY RUNTIME
+tc_marker_color_r: REGISTERED, READ BY RUNTIME
+tc_marker_ground_projection: REGISTERED, READ BY RUNTIME
+tc_marker_opacity: REGISTERED, READ BY RUNTIME
+tc_marker_pulse: REGISTERED, READ BY RUNTIME
+tc_marker_shape: REGISTERED, READ BY RUNTIME
+tc_marker_show_bounces: REGISTERED, READ BY RUNTIME
+tc_marker_show_time: REGISTERED, READ BY RUNTIME
+tc_marker_size: REGISTERED, READ BY RUNTIME
+tc_max_candidate_count: REGISTERED
+tc_max_path_corrections: REGISTERED, READ BY RUNTIME
+tc_max_profile_simulations: REGISTERED, READ BY RUNTIME
+tc_max_setup_rejections: REGISTERED, READ BY RUNTIME
+tc_min_initial_jump_delay_ms: REGISTERED, READ BY RUNTIME
+tc_objective: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_prediction_horizon: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_prediction_timestep: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_reaction_allowance_ms: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_reject_unsupported_geometry: REGISTERED, READ BY RUNTIME
+tc_robustness_margin: REGISTERED, READ BY RUNTIME
+tc_setup_preset: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_setup_rotation_max: REGISTERED
+tc_setup_rotation_min: REGISTERED
+tc_setup_validation_delay: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_shoot_aim_mode: REGISTERED, READ BY RUNTIME
+tc_shoot_ball_direction_max: REGISTERED, EDITED/SAVED
+tc_shoot_ball_direction_min: REGISTERED, EDITED/SAVED
+tc_shoot_ball_height_max: REGISTERED, EDITED/SAVED
+tc_shoot_ball_height_min: REGISTERED, EDITED/SAVED
+tc_shoot_ball_speed_max: REGISTERED, EDITED/SAVED
+tc_shoot_ball_speed_min: REGISTERED, EDITED/SAVED
+tc_shoot_ball_vertical_max: REGISTERED, EDITED/SAVED
+tc_shoot_ball_vertical_min: REGISTERED, EDITED/SAVED
+tc_shoot_car_facing_max: REGISTERED, EDITED/SAVED
+tc_shoot_car_facing_min: REGISTERED, EDITED/SAVED
+tc_shoot_car_speed_max: REGISTERED, EDITED/SAVED
+tc_shoot_car_speed_min: REGISTERED, EDITED/SAVED
+tc_shoot_car_velocity_angle_max: REGISTERED, EDITED/SAVED
+tc_shoot_car_velocity_angle_min: REGISTERED, EDITED/SAVED
+tc_shoot_custom_aim_x: REGISTERED, READ BY RUNTIME
+tc_shoot_distance_max: REGISTERED, EDITED/SAVED
+tc_shoot_distance_min: REGISTERED, EDITED/SAVED
+tc_shoot_goal_height: REGISTERED, READ BY RUNTIME
+tc_shoot_lateral_max: REGISTERED, EDITED/SAVED
+tc_shoot_lateral_min: REGISTERED, EDITED/SAVED
+tc_shoot_max_aim_error: REGISTERED
+tc_shoot_setup_rotation_max: REGISTERED, EDITED/SAVED
+tc_shoot_setup_rotation_min: REGISTERED, EDITED/SAVED
+tc_shoot_target_height_max: REGISTERED, EDITED/SAVED
+tc_shoot_target_height_min: REGISTERED, EDITED/SAVED
+tc_show_alignment: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_show_contact_marker: REGISTERED, READ BY RUNTIME
+tc_show_height: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_show_hud: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_show_numbers: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_show_reaction_cue: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_show_takeoff_arrow: REGISTERED, READ BY RUNTIME
+tc_show_takeoff_line: REGISTERED, READ BY RUNTIME
+tc_show_takeoff_marker: REGISTERED, READ BY RUNTIME
+tc_show_timing: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_solver_hz: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_takeoff_arrow_length: REGISTERED, READ BY RUNTIME
+tc_takeoff_candidate_b: REGISTERED
+tc_takeoff_candidate_g: REGISTERED
+tc_takeoff_candidate_r: REGISTERED
+tc_takeoff_confidence_min: REGISTERED, READ BY RUNTIME
+tc_takeoff_line_thickness: REGISTERED, READ BY RUNTIME
+tc_takeoff_marker_b: REGISTERED
+tc_takeoff_marker_g: REGISTERED
+tc_takeoff_marker_r: REGISTERED
+tc_takeoff_marker_size: REGISTERED, READ BY RUNTIME
+tc_takeoff_marker_tolerance: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_tangential_damping: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_target_height_max: REGISTERED, READ BY RUNTIME
+tc_target_height_min: REGISTERED, READ BY RUNTIME
+tc_timing_display_early_ms: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_timing_display_late_ms: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_timing_green_early_ms: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_timing_green_late_ms: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_timing_yellow_early_ms: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_timing_yellow_late_ms: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_unreachable_setup_chance: REGISTERED, READ BY RUNTIME
+tc_validation_stable_time: REGISTERED, READ BY RUNTIME, EDITED/SAVED
+tc_vertical_calibration: REGISTERED, READ BY RUNTIME
+tc_yellow_alignment: REGISTERED, READ BY RUNTIME, EDITED/SAVED

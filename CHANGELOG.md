@@ -1,27 +1,18 @@
-## 5.2.1 - CI compile fix
-
-- Moved the Advanced diagnostics panel back into the settings renderer.
-- Removed the unreachable diagnostics block that had been placed after `return` in `rangeControl()`.
-
 # Changelog
 
-## 5.2.0 Functional Baseline
+## 5.3.0-runtime-wiring
 
-- Made Timing, Angle, and Height use explicit live/frozen sources.
-- Replaced the cue effects/audio path with a single reliable red/green rectangle.
-- Added a bounded coarse-to-fine candidate/profile search and automatic simple fallback.
-- Added real controller input capture for grounded continuation inputs.
-- Wired horizontal and vertical calibration into reach simulation.
-- Replaced hardcoded boost availability with the local car boost component.
-- Connected Shoot aim/speed scoring switches, setup rejection limit, and marker-before-cue master control.
-- Added solve budgets, backend selection, takeoff confidence threshold, and runtime diagnostics.
-- Kept Custom preset storage connected through the generic preset schema.
-- Added `cvar_audit.txt` and repository metadata/build-output exclusions.
-- Removed cue sound, audio settings, and external sound-file dependencies.
-
-## Known limitations
-
-- The advanced aerial controller is still a bounded reachability approximation, not a full Rocket League car dynamics replica.
-- Shoot output is explicitly an estimated impulse/corridor score, not a guaranteed physical shot.
-- Expensive search is bounded on the game thread; it has not yet been moved to a worker thread.
-- Ball collision geometry remains approximate in curved and overlapping goal regions.
+- Fixed missing `tc_guidance_style` assignment when a scenario starts.
+- Reset cue and reaction state on every scenario.
+- Made the candidate solution feed Timing and Angle before lock.
+- Enforced the full target-height range for every selection path.
+- Removed Reaction target-policy controls and random-policy behavior.
+- Replaced wall-clock-aborted candidate solving with a deterministic 12-finalist pass.
+- Replaced weighted target ranking with explicit Fast Touch and Shoot ordering.
+- Added strict pre-bounce selection with one global optional post-bounce fallback.
+- Prevented Shoot generation from accepting a ceiling/wall/floor collision before a descending target crossing.
+- Removed boost-deficit target rejection and user-facing profile/backend controls.
+- Replaced displayed bot-steering takeoff positions with live-input continuation estimates.
+- Removed Custom preset storage and non-setup fields from preset memory.
+- Made Height independent from Timing visibility.
+- Added visible build identifier and cue color controls.
