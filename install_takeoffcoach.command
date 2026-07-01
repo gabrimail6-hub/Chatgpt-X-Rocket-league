@@ -50,7 +50,18 @@ fi
 cfg_dir="$(dirname "$plugin_dir")/cfg"
 mkdir -p "$plugin_dir" "$cfg_dir"
 cp -f "$DLL" "$plugin_dir/TakeoffCoach.dll"
-[[ -f "$CFG" ]] && cp -f "$CFG" "$cfg_dir/takeoffcoach.cfg"
+if [[ -f "$CFG" ]]; then
+  if [[ -f "$cfg_dir/takeoffcoach.cfg" ]]; then
+    cp -f "$CFG" "$cfg_dir/takeoffcoach.default.cfg"
+    echo "Existing user config preserved; new defaults saved as takeoffcoach.default.cfg."
+  else
+    cp -f "$CFG" "$cfg_dir/takeoffcoach.cfg"
+  fi
+else
+  echo "takeoffcoach.cfg is missing from this folder."
+  read -r -p "Press Return to close..."
+  exit 1
+fi
 
 plugins_cfg="$cfg_dir/plugins.cfg"
 touch "$plugins_cfg"

@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <random>
 #include <string>
+#include <vector>
+#include <deque>
 
 class TakeoffCoach final
     : public BakkesMod::Plugin::BakkesModPlugin
@@ -26,10 +28,29 @@ public:
 private:
     enum class Objective : int
     {
-        Fast = 0,
-        Control = 1,
-        Score = 2,
-        RandomCall = 3
+        FastTouch = 0,
+        Shoot = 1
+    };
+
+    enum class SurfaceType : int
+    {
+        None, Ground, Ceiling, SideWall, BackWall, DiagonalCorner,
+        GoalFloor, GoalBackWall, GoalCeiling, GoalPost, Crossbar
+    };
+
+    enum class BouncePolicy : int
+    {
+        None = 0, GroundOnly = 1, WallOnly = 2, Any = 3
+    };
+
+    enum class AimMode : int
+    {
+        Centre = 0, NearPost = 1, FarPost = 2, RandomCorridor = 3, Custom = 4
+    };
+
+    enum class AerialProfile : int
+    {
+        SingleJump, FastAerial, DelayedSecondJump, Conservative
     };
 
     enum class GuidanceStyle : int
@@ -53,9 +74,36 @@ private:
         Rotator carRotation{};
         Vector ballPosition{};
         Vector ballVelocity{};
-        Objective objective = Objective::Fast;
+        Objective objective = Objective::FastTouch;
         GuidanceStyle guidanceStyle = GuidanceStyle::Read;
         int goalSign = 1;
+    };
+
+    struct BallPredictionSlice
+    {
+        float absoluteTime = 0.0f;
+        Vector position{};
+        Vector velocity{};
+        Vector angularVelocity{};
+        int bounceCount = 0;
+        SurfaceType surface = SurfaceType::None;
+        bool supportedGeometry = true;
+    };
+
+    struct ContactTarget
+    {
+        bool valid = false;
+        float contactAbsoluteTime = 0.0f;
+        Vector ballPosition{};
+        Vector ballVelocity{};
+        Vector desiredCarPosition{};
+        Vector desiredFacingDirection{};
+        Vector desiredGoalPoint{};
+        Vector predictedOutgoingVelocity{};
+        int bounceCount = 0;
+        SurfaceType lastSurface = SurfaceType::None;
+        float shotAimErrorDeg = 0.0f;
+        float predictedShotSpeed = 0.0f;
     };
 
     struct Solution
@@ -64,17 +112,23 @@ private:
         float idealJumpAbsolute = 0.0f;
         float jumpDelay = 0.0f;
         float contactDelay = 0.0f;
+        float requiredAerialDuration = 0.0f;
         float confidence = 0.0f;
+        float robustness = 0.0f;
         float alignmentErrorDeg = 0.0f;
+        float requiredBoost = 0.0f;
         Vector contactPoint{};
         Vector requiredDirection{};
+        Vector idealTakeoffPosition{};
+        AerialProfile profile = AerialProfile::FastAerial;
+        ContactTarget target{};
     };
 
     struct Attempt
     {
         uint64_t generation = 0;
         Phase phase = Phase::Idle;
-        Objective objective = Objective::Fast;
+        Objective objective = Objective::FastTouch;
         GuidanceStyle guidanceStyle = GuidanceStyle::Read;
         Scenario scenario{};
         Solution solution{};
@@ -105,13 +159,44 @@ private:
         float validationStableSince = 0.0f;
         float lockedContactAbsolute = 0.0f;
         int rejectedSetups = 0;
+        int failedValidationSamples = 0;
+        int pathCorrections = 0;
+        float settledAt = 0.0f;
+        float initialCandidateTime = 0.0f;
+        float initialAvailableJumpDelay = 0.0f;
+        float cueTime = 0.0f;
+        float reactionRawMs = 0.0f;
+        float reactionAfterAllowanceMs = 0.0f;
+        float possibleTimeSavedMs = 0.0f;
+        bool cueShown = false;
+        bool reactionCaptured = false;
+        Vector snapshotBallPosition{};
+        Vector snapshotBallVelocity{};
+        std::vector<BallPredictionSlice> ballPath;
+        ContactTarget candidateTarget{};
+        ContactTarget lockedTarget{};
 
         std::string headline = "Open settings and start a drill.";
         std::string detail;
         std::string correction;
     };
 
+    struct SessionStats
+    {
+        int attempts = 0;
+        int touches = 0;
+        int goals = 0;
+        double absTimingTotal = 0.0;
+        double angleTotal = 0.0;
+        double possibleSavedTotal = 0.0;
+        double touchHeightTotal = 0.0;
+        double contactSpeedTotal = 0.0;
+        std::vector<float> reactions;
+        void reset() { *this = SessionStats{}; }
+    };
+
     Attempt attempt_;
+    SessionStats session_;
     int consecutiveRerolls_ = 0;
     std::mt19937 rng_{std::random_device{}()};
 
@@ -128,9 +213,15 @@ private:
     void updateAirborne(CarWrapper car, BallWrapper ball, float now);
     void finishAttempt(CarWrapper car, BallWrapper ball, bool touched, bool scored, float now);
 
-    Solution solve(CarWrapper car, BallWrapper ball, float now) const;
+    Solution solve(CarWrapper car, BallWrapper ball, float now);
     Solution solveLockedTarget(CarWrapper car, float now) const;
-    Vector predictBallPosition(Vector position, Vector velocity, float t) const;
+    std::vector<BallPredictionSlice> buildBallPath(Vector position, Vector velocity, Vector angularVelocity, float now) const;
+    bool collideBall(Vector& position, Vector& velocity, float radius, SurfaceType& surface) const;
+    ContactTarget selectContactTarget(CarWrapper car, const std::vector<BallPredictionSlice>& path, float now) const;
+    Solution solveTargetWithProfiles(CarWrapper car, const ContactTarget& target, float now) const;
+    bool simulateAerialProfile(CarWrapper car, const ContactTarget& target, AerialProfile profile, float duration, Solution& out) const;
+    bool samplePath(float absoluteTime, BallPredictionSlice& out) const;
+    Vector chooseGoalPoint(const ContactTarget& base, Vector carPosition) const;
 
     void renderHud(CanvasWrapper canvas);
     void drawGauge(
@@ -149,6 +240,7 @@ private:
     void renderDrillTab();
     void renderSetupTab();
     void renderFeedbackTab();
+    void renderAdvancedTab();
     void saveModePreset(int objective);
     void loadModePreset(int objective);
     void resetModePreset(int preset);

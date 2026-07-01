@@ -1,35 +1,26 @@
-# Takeoff Coach 4.1
+# Takeoff Coach 5.0 Vector
 
-A BakkesMod Freeplay plugin for training the latest viable fast-aerial takeoff without RocketSim.
+A BakkesMod freeplay plugin with exactly two objectives: **Fast Touch** and **Shoot**.
 
-## Drill objectives
+The Vector pipeline predicts one native ball path at a fixed timestep, selects one `ContactTarget`, and uses that same locked target for the contact marker, aerial timing, takeoff marker, cue, alignment, grading, and shot evaluation. Supported prediction surfaces include the floor, ceiling, side/back walls, diagonal corners, goal interior, posts, and crossbar approximations. Bounce policy and maximum bounce count are configurable.
 
-- **Fast Touch**: reach the ball quickly and reports car speed at contact.
-- **Control Touch**: rewards a lower car-to-ball relative contact speed.
-- **Score**: computes a goal-directed contact and keeps tracking after the touch so the goal can be detected.
-- **Random Call**: chooses and displays one of the three objectives for every attempt.
+## Guidance
 
-## Setup presets
+**Read** displays timing, alignment, contact, and takeoff guidance. **Reaction Cue** renders a red lamp before the ideal first-jump time and a green lamp at the cue. The first jump edge freezes the target and takeoff direction, records raw reaction time, subtracts the configured allowance (100 ms by default), and reports reaction loss and possible time saved.
 
-- **Shooting**: the requested shooting/setup defaults.
-- **Fast Touch**: broader position, direction, height and speed ranges, including away, crossing and toward trajectories.
-- **Custom**: edit any min/max range, press **Save current as Custom**, and reload it later.
+## Objectives
 
-The two built-in presets remain recoverable. Saving never silently overwrites them.
+- **Fast Touch** ignores both goals and prioritizes the earliest useful reachable touch, with configurable contact height and bounce allowance.
+- **Shoot** chooses the correct attacking goal, supports centre/near-post/far-post/random/custom aim, estimates outgoing direction and speed, rejects contacts outside the goal corridor, and continues tracking after contact to detect a goal.
 
-## Install on macOS / Heroic
+## Solver
 
-1. Download the compiled `TakeoffCoach` artifact from the latest successful GitHub Actions run.
-2. Keep `TakeoffCoach.dll`, `takeoffcoach.cfg`, and `install_takeoffcoach.command` in the same folder.
-3. Double-click `install_takeoffcoach.command`. If macOS blocks it, right-click it and choose **Open**.
-4. Restart Rocket League/BakkesMod and open **F2 > Plugins > Takeoff Coach**.
+The bounded human aerial solver tests single jump, fast aerial, delayed second jump, jump-hold, boost-delay, pitch-delay, and conservative profile variants. It outputs the latest viable jump, aerial duration, takeoff position/direction, boost estimate, and robustness.
 
-The installer searches common Heroic and CrossOver Wine prefixes, installs the DLL and config, and adds the plugin/config load commands without duplicating them.
+## Presets
 
-## Manual build
+The Setup tab provides **Shoot Default**, **Fast Touch Default**, and **Custom**, with load, reset, copy-to-Custom, and save-current-to-Custom controls. Built-in defaults remain recoverable.
 
-The repository includes a C++20 x64 Visual Studio project. Set the BakkesMod SDK path expected by `BakkesMod.props`, then build `TakeoffCoach.vcxproj` in Release x64. GitHub Actions also builds a ready-to-install artifact.
+## Build
 
-## Notes
-
-The reach calculation is a configurable deterministic training model, not a full Rocket League physics simulation. Tune the horizontal/vertical calibration and reaction allowance to your mechanics.
+The Visual Studio project targets C++20 x64 and uses the BakkesMod SDK path supplied through `BAKKESMOD_SDK`. GitHub Actions builds all repository-owned `.cpp` files and packages the DLL and default config.

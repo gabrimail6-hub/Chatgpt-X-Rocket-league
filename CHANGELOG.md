@@ -1,16 +1,15 @@
 # Changelog
 
-## 4.1.0
+## 5.0.0 Vector
 
-- Added Fast Touch, Control Touch, Score, and Random Call objectives.
-- Added immutable Shooting and Fast Touch built-in presets.
-- Added a persistent Custom preset with explicit save/reload controls.
-- Preserved the requested Shooting defaults and added broad Fast Touch ranges.
-- Kept full away, crossing, and toward ball-direction randomization.
-- Fixed Score attempts ending immediately on first contact; goal tracking now continues after touch.
-- Fixed an invalid ImGui `ColorEdit3` call.
-- Replaced template placeholders with a real C++20/x64 Visual Studio project.
-- Made GitHub Actions build from repository-owned sources.
-- Added a macOS Heroic/CrossOver installer command.
-- Removed unused template, resource, GUI-base, and auxiliary ImGui files.
-- No RocketSim dependency.
+- Reduced objectives to Fast Touch and Shoot; renamed Score to Shoot everywhere.
+- Added a shared fixed-step native ball path and a single locked ContactTarget.
+- Added supported surface bounces, bounce policy, damping, restitution, and goal geometry approximations.
+- Added bounded human aerial profiles and takeoff-position/facing output.
+- Implemented Reaction Cue rendering and reaction grading.
+- Implemented candidate/locked contact marker and takeoff marker/arrow/target line.
+- Replaced candidate-to-candidate drift verification with snapshot path validation and correction.
+- Added Shoot aim modes, outgoing direction/speed estimation, corridor rejection, and post-touch goal tracking.
+- Applied the requested Shoot defaults consistently in C++ and configuration.
+- Added session statistics and a Solver / Advanced tab.
+- Removed all non-Fast-Touch and non-Shoot objective branches and settings.
