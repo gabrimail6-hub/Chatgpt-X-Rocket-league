@@ -1,44 +1,35 @@
-# Takeoff Coach 2
+# Takeoff Coach 4.1
 
-A BakkesMod Freeplay plugin for training the latest viable fast-aerial takeoff.
+A BakkesMod Freeplay plugin for training the latest viable fast-aerial takeoff without RocketSim.
 
-## What changed
+## Drill objectives
 
-- The car starts with configurable ground speed.
-- The ball starts with configurable forward and upward velocity.
-- Random mode changes angle, speed, and lateral offset.
-- The coaching cue recalculates from the live ball position and velocity.
-- The HUD shows WAIT, ALIGN, JUMP NOW, or TOO LATE.
-- The first jump is graded for timing and direction.
-- All important values are adjustable in F2 > Plugins > Takeoff Coach.
+- **Fast Touch**: reach the ball quickly and reports car speed at contact.
+- **Control Touch**: rewards a lower car-to-ball relative contact speed.
+- **Score**: computes a goal-directed contact and keeps tracking after the touch so the goal can be detected.
+- **Random Call**: chooses and displays one of the three objectives for every attempt.
 
-## Use
+## Setup presets
 
-1. Load `TakeoffCoach.dll`.
-2. Enter Freeplay.
-3. Open F2 > Plugins > Takeoff Coach.
-4. Press **Start randomized drill**.
-5. Stay grounded while the HUD says WAIT, line up while it says ALIGN, and fast aerial when it says JUMP NOW.
+- **Shooting**: the requested shooting/setup defaults.
+- **Fast Touch**: broader position, direction, height and speed ranges, including away, crossing and toward trajectories.
+- **Custom**: edit any min/max range, press **Save current as Custom**, and reload it later.
 
-The reach calculation is a configurable training model, not a perfect Rocket League physics solver. Tune **How late to wait** and the boost-efficiency sliders until the JUMP NOW cue matches takeoffs that are barely reachable for your mechanics.
+The two built-in presets remain recoverable. Saving never silently overwrites them.
 
+## Install on macOS / Heroic
 
-<!-- V3 fixed rebuild: 2026-06-29 18:47:43 UTC -->
+1. Download the compiled `TakeoffCoach` artifact from the latest successful GitHub Actions run.
+2. Keep `TakeoffCoach.dll`, `takeoffcoach.cfg`, and `install_takeoffcoach.command` in the same folder.
+3. Double-click `install_takeoffcoach.command`. If macOS blocks it, right-click it and choose **Open**.
+4. Restart Rocket League/BakkesMod and open **F2 > Plugins > Takeoff Coach**.
 
-<!-- Takeoff Coach 3.2 height-gauge update: 2026-06-29 19:32:13 UTC -->
+The installer searches common Heroic and CrossOver Wine prefixes, installs the DLL and config, and adds the plugin/config load commands without duplicating them.
 
-<!-- Takeoff Coach 3.3: 2026-06-29 20:31:20 UTC -->
+## Manual build
 
-<!-- Takeoff Coach 3.3.1 solver repair: 2026-06-29 20:35:25 UTC -->
+The repository includes a C++20 x64 Visual Studio project. Set the BakkesMod SDK path expected by `BakkesMod.props`, then build `TakeoffCoach.vcxproj` in Release x64. GitHub Actions also builds a ready-to-install artifact.
 
-<!-- Takeoff Coach 3.3.2 live locked-target guidance: 2026-06-29 20:52:23 UTC -->
+## Notes
 
-<!-- Takeoff Coach 3.3.3 continuous late guidance and full rerolls: 2026-06-29 21:13:31 UTC -->
-
-<!-- Takeoff Coach 3.3.4 descending-only target and minimum timing: 2026-06-29 22:19:56 UTC -->
-
-<!-- Takeoff Coach 3.3.5 strict initial timing, direct live angle, bounce invalidation, target marker: 2026-06-29 22:41:55 UTC -->
-
-<!-- Takeoff Coach 3.4.0 Apex Lock: verified pre-bounce target: 2026-06-29 23:02:19 UTC -->
-
-<!-- Takeoff Coach 4.0 Vector: 2026-07-01 10:23:52 UTC -->
+The reach calculation is a configurable deterministic training model, not a full Rocket League physics simulation. Tune the horizontal/vertical calibration and reaction allowance to your mechanics.

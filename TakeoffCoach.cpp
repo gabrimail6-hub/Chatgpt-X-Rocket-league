@@ -1,7 +1,7 @@
 #include "TakeoffCoach.h"
 
 #include "bakkesmod/wrappers/GameEvent/ServerWrapper.h"
-#include "IMGUI/imgui.h"
+#include "imgui.h"
 
 #include <algorithm>
 #include <cmath>
@@ -12,7 +12,7 @@
 BAKKESMOD_PLUGIN(
     TakeoffCoach,
     "Takeoff Coach",
-    "4.0.0 Vector",
+    "4.1.0 Presets",
     PLUGINTYPE_FREEPLAY
 )
 
@@ -59,7 +59,7 @@ void TakeoffCoach::onLoad()
             renderHud(canvas);
         });
 
-    cvarManager->log("Takeoff Coach 4.0 Vector loaded.");
+    cvarManager->log("Takeoff Coach 4.1 Presets loaded.");
 }
 
 void TakeoffCoach::onUnload()
@@ -74,7 +74,8 @@ void TakeoffCoach::registerCvars()
         cvarManager->registerCvar(name, value, "", true, true, low, true, high);
     };
 
-    reg("tc_objective", "1", 0.0f, 1.0f);
+    reg("tc_objective", "2", 0.0f, 3.0f);
+    reg("tc_setup_preset", "0", 0.0f, 2.0f);
     reg("tc_guidance_style", "0", 0.0f, 1.0f);
     reg("tc_reaction_allowance_ms", "100", 0.0f, 400.0f);
     reg("tc_hide_guidance_before_cue", "1", 0.0f, 1.0f);
@@ -212,6 +213,31 @@ void TakeoffCoach::registerCvars()
     reg("tc_fast_ball_vertical_max", "1600", -1000.0f, 1800.0f);
     reg("tc_fast_ball_direction_min", "-180", -180.0f, 180.0f);
     reg("tc_fast_ball_direction_max", "180", -180.0f, 180.0f);
+
+    // Persistent user-editable setup. Built-in Shooting and Fast Touch presets
+    // stay recoverable; only this Custom slot is overwritten by Save Custom.
+    reg("tc_custom_distance_min", "1200", -1800.0f, 6000.0f);
+    reg("tc_custom_distance_max", "3000", -1800.0f, 6000.0f);
+    reg("tc_custom_lateral_min", "-900", -2200.0f, 2200.0f);
+    reg("tc_custom_lateral_max", "900", -2200.0f, 2200.0f);
+    reg("tc_custom_ball_height_min", "120", 93.0f, 2044.0f);
+    reg("tc_custom_ball_height_max", "1500", 93.0f, 2044.0f);
+    reg("tc_custom_target_height_min", "600", 93.0f, 2044.0f);
+    reg("tc_custom_target_height_max", "685", 93.0f, 2044.0f);
+    reg("tc_custom_setup_rotation_min", "90", -180.0f, 180.0f);
+    reg("tc_custom_setup_rotation_max", "90", -180.0f, 180.0f);
+    reg("tc_custom_car_facing_min", "-15", -90.0f, 90.0f);
+    reg("tc_custom_car_facing_max", "15", -90.0f, 90.0f);
+    reg("tc_custom_car_speed_min", "1500", 0.0f, 2300.0f);
+    reg("tc_custom_car_speed_max", "2300", 0.0f, 2300.0f);
+    reg("tc_custom_car_velocity_angle_min", "-10", -120.0f, 120.0f);
+    reg("tc_custom_car_velocity_angle_max", "10", -120.0f, 120.0f);
+    reg("tc_custom_ball_speed_min", "500", 0.0f, 2200.0f);
+    reg("tc_custom_ball_speed_max", "1500", 0.0f, 2200.0f);
+    reg("tc_custom_ball_vertical_min", "1000", -1000.0f, 1800.0f);
+    reg("tc_custom_ball_vertical_max", "1600", -1000.0f, 1800.0f);
+    reg("tc_custom_ball_direction_min", "-45", -180.0f, 180.0f);
+    reg("tc_custom_ball_direction_max", "45", -180.0f, 180.0f);
 
     constexpr unsigned char permission = PERMISSION_FREEPLAY;
 
@@ -718,25 +744,36 @@ void TakeoffCoach::updateAirborne(CarWrapper car, BallWrapper ball, float now)
     const bool ballChanged = std::abs(ballSpeed - attempt_.previousBallSpeed) > 120.0f;
     attempt_.previousBallSpeed = ballSpeed;
 
-    const bool touched = nearBall && ballChanged;
+    const bool newTouch = nearBall && ballChanged && !attempt_.touched;
     const bool scored =
         std::abs(ballPosition.Y) > 5120.0f
         && std::abs(ballPosition.X) < 900.0f
         && ballPosition.Z < 650.0f;
 
-    if (touched || scored)
+    if (newTouch)
     {
-        finishAttempt(car, ball, true, scored, now);
+        attempt_.touched = true;
+        if (attempt_.objective != Objective::Score)
+        {
+            finishAttempt(car, ball, true, false, now);
+            return;
+        }
+    }
+
+    if (scored)
+    {
+        finishAttempt(car, ball, attempt_.touched, true, now);
         return;
     }
 
-    const float deadline =
-        attempt_.jumpSolution.valid
-        ? attempt_.jumpSolution.idealJumpAbsolute + attempt_.jumpSolution.contactDelay + 0.8f
-        : attempt_.jumpAt + 2.8f;
+    const float deadline = attempt_.touched && attempt_.objective == Objective::Score
+        ? attempt_.jumpAt + 5.0f
+        : (attempt_.jumpSolution.valid
+            ? attempt_.jumpSolution.idealJumpAbsolute + attempt_.jumpSolution.contactDelay + 0.8f
+            : attempt_.jumpAt + 2.8f);
 
     if (now > deadline)
-        finishAttempt(car, ball, false, false, now);
+        finishAttempt(car, ball, attempt_.touched, false, now);
 }
 
 void TakeoffCoach::finishAttempt(
@@ -787,7 +824,7 @@ void TakeoffCoach::finishAttempt(
         attempt_.headline = "GOOD TAKEOFF, MISSED BALL";
         attempt_.correction = "The takeoff was usable; refine the aerial after jumping.";
     }
-    else if (attempt_.objective == Objective::Shoot)
+    else if (attempt_.objective == Objective::Score)
     {
         attempt_.headline = scored ? "GOAL" : "TOUCH, NO GOAL";
         attempt_.correction =
@@ -956,7 +993,7 @@ TakeoffCoach::Solution TakeoffCoach::solve(
 
         Vector desiredOutgoing;
 
-        if (attempt_.objective == Objective::Shoot)
+        if (attempt_.objective == Objective::Score)
         {
             const Vector goal{
                 0.0f,
@@ -1733,56 +1770,62 @@ void TakeoffCoach::RenderSettings()
     }
 }
 
-std::string TakeoffCoach::modePrefix(int objective) const
+std::string TakeoffCoach::modePrefix(int preset) const
 {
-    return objective == 1 ? "tc_shoot_" : "tc_fast_";
+    if (preset == 0)
+        return "tc_shoot_";
+    if (preset == 1)
+        return "tc_fast_";
+    return "tc_custom_";
 }
 
-void TakeoffCoach::saveModePreset(int objective)
+namespace
 {
-    const std::string p = modePrefix(objective);
-    const std::vector<std::pair<std::string, std::string>> fields = {
-        {"distance_min","tc_distance_min"},{"distance_max","tc_distance_max"},
-        {"lateral_min","tc_lateral_min"},{"lateral_max","tc_lateral_max"},
-        {"ball_height_min","tc_ball_height_min"},{"ball_height_max","tc_ball_height_max"},
-        {"target_height_min","tc_target_height_min"},{"target_height_max","tc_target_height_max"},
-        {"setup_rotation_min","tc_setup_rotation_min"},{"setup_rotation_max","tc_setup_rotation_max"},
-        {"car_facing_min","tc_car_facing_min"},{"car_facing_max","tc_car_facing_max"},
-        {"car_speed_min","tc_car_speed_min"},{"car_speed_max","tc_car_speed_max"},
-        {"car_velocity_angle_min","tc_car_velocity_angle_min"},
-        {"car_velocity_angle_max","tc_car_velocity_angle_max"},
-        {"ball_speed_min","tc_ball_speed_min"},{"ball_speed_max","tc_ball_speed_max"},
-        {"ball_vertical_min","tc_ball_vertical_min"},{"ball_vertical_max","tc_ball_vertical_max"},
-        {"ball_direction_min","tc_ball_direction_min"},{"ball_direction_max","tc_ball_direction_max"}};
-
-    for (const auto& field : fields)
-        setValue(p + field.first, getFloat(field.second));
+    const std::vector<std::pair<std::string, std::string>>& presetFields()
+    {
+        static const std::vector<std::pair<std::string, std::string>> fields = {
+            {"distance_min","tc_distance_min"},{"distance_max","tc_distance_max"},
+            {"lateral_min","tc_lateral_min"},{"lateral_max","tc_lateral_max"},
+            {"ball_height_min","tc_ball_height_min"},{"ball_height_max","tc_ball_height_max"},
+            {"target_height_min","tc_target_height_min"},{"target_height_max","tc_target_height_max"},
+            {"setup_rotation_min","tc_setup_rotation_min"},{"setup_rotation_max","tc_setup_rotation_max"},
+            {"car_facing_min","tc_car_facing_min"},{"car_facing_max","tc_car_facing_max"},
+            {"car_speed_min","tc_car_speed_min"},{"car_speed_max","tc_car_speed_max"},
+            {"car_velocity_angle_min","tc_car_velocity_angle_min"},
+            {"car_velocity_angle_max","tc_car_velocity_angle_max"},
+            {"ball_speed_min","tc_ball_speed_min"},{"ball_speed_max","tc_ball_speed_max"},
+            {"ball_vertical_min","tc_ball_vertical_min"},{"ball_vertical_max","tc_ball_vertical_max"},
+            {"ball_direction_min","tc_ball_direction_min"},{"ball_direction_max","tc_ball_direction_max"}};
+        return fields;
+    }
 }
 
-void TakeoffCoach::loadModePreset(int objective)
+void TakeoffCoach::saveModePreset(int preset)
 {
-    const std::string p = modePrefix(objective);
-    const std::vector<std::pair<std::string, std::string>> fields = {
-        {"distance_min","tc_distance_min"},{"distance_max","tc_distance_max"},
-        {"lateral_min","tc_lateral_min"},{"lateral_max","tc_lateral_max"},
-        {"ball_height_min","tc_ball_height_min"},{"ball_height_max","tc_ball_height_max"},
-        {"target_height_min","tc_target_height_min"},{"target_height_max","tc_target_height_max"},
-        {"setup_rotation_min","tc_setup_rotation_min"},{"setup_rotation_max","tc_setup_rotation_max"},
-        {"car_facing_min","tc_car_facing_min"},{"car_facing_max","tc_car_facing_max"},
-        {"car_speed_min","tc_car_speed_min"},{"car_speed_max","tc_car_speed_max"},
-        {"car_velocity_angle_min","tc_car_velocity_angle_min"},
-        {"car_velocity_angle_max","tc_car_velocity_angle_max"},
-        {"ball_speed_min","tc_ball_speed_min"},{"ball_speed_max","tc_ball_speed_max"},
-        {"ball_vertical_min","tc_ball_vertical_min"},{"ball_vertical_max","tc_ball_vertical_max"},
-        {"ball_direction_min","tc_ball_direction_min"},{"ball_direction_max","tc_ball_direction_max"}};
-
-    for (const auto& field : fields)
-        setValue(field.second, getFloat(p + field.first));
+    // The two built-ins are intentionally immutable. Saving always targets Custom.
+    const std::string prefix = modePrefix(2);
+    for (const auto& field : presetFields())
+        setValue(prefix + field.first, getFloat(field.second));
+    setValue("tc_setup_preset", 2);
 }
 
-void TakeoffCoach::resetModePreset(int objective)
+void TakeoffCoach::loadModePreset(int preset)
 {
-    if (objective == 1)
+    const std::string prefix = modePrefix(preset);
+    for (const auto& field : presetFields())
+        setValue(field.second, getFloat(prefix + field.first));
+}
+
+void TakeoffCoach::applyPreset(int preset)
+{
+    preset = std::max(0, std::min(preset, 2));
+    setValue("tc_setup_preset", preset);
+    loadModePreset(preset);
+}
+
+void TakeoffCoach::resetModePreset(int preset)
+{
+    if (preset == 0)
     {
         setValue("tc_shoot_distance_min",1200.0f); setValue("tc_shoot_distance_max",3000.0f);
         setValue("tc_shoot_lateral_min",-900.0f); setValue("tc_shoot_lateral_max",900.0f);
@@ -1796,7 +1839,7 @@ void TakeoffCoach::resetModePreset(int objective)
         setValue("tc_shoot_ball_vertical_min",1000.0f); setValue("tc_shoot_ball_vertical_max",1600.0f);
         setValue("tc_shoot_ball_direction_min",-45.0f); setValue("tc_shoot_ball_direction_max",45.0f);
     }
-    else
+    else if (preset == 1)
     {
         setValue("tc_fast_distance_min",-300.0f); setValue("tc_fast_distance_max",2800.0f);
         setValue("tc_fast_lateral_min",-1200.0f); setValue("tc_fast_lateral_max",1200.0f);
@@ -1810,23 +1853,28 @@ void TakeoffCoach::resetModePreset(int objective)
         setValue("tc_fast_ball_vertical_min",400.0f); setValue("tc_fast_ball_vertical_max",1600.0f);
         setValue("tc_fast_ball_direction_min",-180.0f); setValue("tc_fast_ball_direction_max",180.0f);
     }
-
-    loadModePreset(objective);
+    else
+    {
+        // Reset Custom to the Shooting defaults, then keep it independently editable.
+        resetModePreset(0);
+        loadModePreset(0);
+        saveModePreset(2);
+    }
+    applyPreset(preset);
 }
 
 void TakeoffCoach::renderDrillTab()
 {
-    static int previousObjective = getInt("tc_objective");
-
     int objective = getInt("tc_objective");
-    const char* objectives[] = {"Fast Touch", "Shoot"};
+    const char* objectives[] = {"Fast Touch", "Control Touch", "Score", "Random Call"};
 
-    if (ImGui::Combo("Objective", &objective, objectives, 2))
+    if (ImGui::Combo("Objective", &objective, objectives, 4))
     {
-        saveModePreset(previousObjective);
         setValue("tc_objective", objective);
-        loadModePreset(objective);
-        previousObjective = objective;
+        if (objective == 2)
+            applyPreset(0);
+        else if (objective == 0 || objective == 1)
+            applyPreset(1);
     }
 
     int guidance = getInt("tc_guidance_style");
@@ -1843,8 +1891,8 @@ void TakeoffCoach::renderDrillTab()
         cvarManager->executeCommand("tc_stop");
 
     ImGui::SameLine();
-    if (ImGui::Button("Reset current mode preset"))
-        resetModePreset(objective);
+    if (ImGui::Button("Apply recommended setup"))
+        applyPreset(objective == 2 ? 0 : 1);
 
     bool autoReset = getBool("tc_auto_reset");
     if (ImGui::Checkbox("Automatically start the next attempt", &autoReset))
@@ -1893,9 +1941,10 @@ void TakeoffCoach::renderDrillTab()
         setValue("tc_feedback_seconds", result);
 
     ImGui::TextWrapped(
-        objective == 1
-        ? "Shoot uses a goal-directed contact and its own saved setup preset."
-        : "Fast Touch ignores shot direction and uses its own broad saved preset.");
+        objective == 0 ? "Fast Touch rewards reaching the ball with speed." :
+        objective == 1 ? "Control Touch rewards a softer relative contact speed." :
+        objective == 2 ? "Score aims the contact through the selected goal." :
+                         "Random Call announces Fast Touch, Control Touch, or Score for each attempt.");
 }
 
 void TakeoffCoach::renderSetupTab()
@@ -1903,17 +1952,21 @@ void TakeoffCoach::renderSetupTab()
     ImGui::TextWrapped(
         "Each pair is a random range. Put both handles together for a fixed value.");
 
-    const int activeMode = getInt("tc_objective");
+    int preset = getInt("tc_setup_preset");
+    const char* presets[] = {"Shooting", "Fast Touch", "Custom"};
+    if (ImGui::Combo("Setup preset", &preset, presets, 3))
+        applyPreset(preset);
 
-    if (ImGui::Button(
-            activeMode == 1
-                ? "Reset Shoot setup"
-                : "Reset Fast Touch setup"))
-        resetModePreset(activeMode);
+    if (ImGui::Button("Reload selected preset"))
+        applyPreset(preset);
 
     ImGui::SameLine();
-    if (ImGui::Button("Save current setup to this mode"))
-        saveModePreset(activeMode);
+    if (ImGui::Button("Save current as Custom"))
+        saveModePreset(2);
+
+    ImGui::SameLine();
+    if (ImGui::Button("Reset selected preset"))
+        resetModePreset(preset);
 
     ImGui::Separator();
     ImGui::Text("POSITION");
@@ -2238,16 +2291,24 @@ float TakeoffCoach::sample(
 
 TakeoffCoach::Objective TakeoffCoach::chooseObjective()
 {
-    return getInt("tc_objective") == 1
-        ? Objective::Shoot
-        : Objective::Fast;
+    const int selected = getInt("tc_objective");
+    if (selected == 3)
+    {
+        std::uniform_int_distribution<int> call(0, 2);
+        return static_cast<Objective>(call(rng_));
+    }
+    return static_cast<Objective>(std::max(0, std::min(selected, 2)));
 }
 
 std::string TakeoffCoach::objectiveName(Objective objective)
 {
-    return objective == Objective::Shoot
-        ? "SHOOT"
-        : "FAST TOUCH";
+    switch (objective)
+    {
+    case Objective::Score: return "SCORE";
+    case Objective::Control: return "CONTROL TOUCH";
+    case Objective::RandomCall: return "RANDOM CALL";
+    default: return "FAST TOUCH";
+    }
 }
 
 float TakeoffCoach::clamp(float value, float low, float high)

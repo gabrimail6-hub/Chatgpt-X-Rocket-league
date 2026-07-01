@@ -27,7 +27,9 @@ private:
     enum class Objective : int
     {
         Fast = 0,
-        Shoot = 1
+        Control = 1,
+        Score = 2,
+        RandomCall = 3
     };
 
     enum class GuidanceStyle : int
@@ -149,8 +151,9 @@ private:
     void renderFeedbackTab();
     void saveModePreset(int objective);
     void loadModePreset(int objective);
-    void resetModePreset(int objective);
-    std::string modePrefix(int objective) const;
+    void resetModePreset(int preset);
+    std::string modePrefix(int preset) const;
+    void applyPreset(int preset);
     bool rangeControl(
         const char* label,
         const std::string& minName,
