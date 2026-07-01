@@ -2529,39 +2529,6 @@ void TakeoffCoach::renderAdvancedTab()
     if (ImGui::Checkbox("Fast aerial profile", &fast)) setValue("tc_profile_fast_aerial", fast);
     if (ImGui::Checkbox("Delayed second-jump profile", &delayed)) setValue("tc_profile_delayed_second", delayed);
     if (ImGui::Checkbox("Conservative profile", &conservative)) setValue("tc_profile_conservative", conservative);
-}
-
-bool TakeoffCoach::rangeControl(
-    const char* label,
-    const std::string& minName,
-    const std::string& maxName,
-    float low,
-    float high,
-    const char* format)
-{
-    float minimum = getFloat(minName);
-    float maximum = getFloat(maxName);
-
-    const bool changed = ImGui::DragFloatRange2(
-        label,
-        &minimum,
-        &maximum,
-        (high - low) / 500.0f,
-        low,
-        high,
-        format,
-        format);
-
-    if (changed)
-    {
-        if (minimum > maximum)
-            std::swap(minimum, maximum);
-
-        setValue(minName, minimum);
-        setValue(maxName, maximum);
-    }
-
-    return changed;
 
     if (ImGui::CollapsingHeader("Diagnostics"))
     {
@@ -2598,6 +2565,39 @@ bool TakeoffCoach::rangeControl(
         }
     }
 
+}
+
+bool TakeoffCoach::rangeControl(
+    const char* label,
+    const std::string& minName,
+    const std::string& maxName,
+    float low,
+    float high,
+    const char* format)
+{
+    float minimum = getFloat(minName);
+    float maximum = getFloat(maxName);
+
+    const bool changed = ImGui::DragFloatRange2(
+        label,
+        &minimum,
+        &maximum,
+        (high - low) / 500.0f,
+        low,
+        high,
+        format,
+        format);
+
+    if (changed)
+    {
+        if (minimum > maximum)
+            std::swap(minimum, maximum);
+
+        setValue(minName, minimum);
+        setValue(maxName, maximum);
+    }
+
+    return changed;
 }
 
 std::string TakeoffCoach::GetPluginName()

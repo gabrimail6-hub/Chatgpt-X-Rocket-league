@@ -1,3 +1,8 @@
+## 5.2.1 - CI compile fix
+
+- Moved the Advanced diagnostics panel back into the settings renderer.
+- Removed the unreachable diagnostics block that had been placed after `return` in `rangeControl()`.
+
 # Changelog
 
 ## 5.2.0 Functional Baseline
