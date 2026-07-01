@@ -12,7 +12,7 @@
 BAKKESMOD_PLUGIN(
     TakeoffCoach,
     "Takeoff Coach",
-    "5.8.0 Live Takeoff",
+    "5.9.0 Live Interception",
     PLUGINTYPE_FREEPLAY
 )
 
@@ -101,7 +101,7 @@ void TakeoffCoach::onLoad()
             renderHud(canvas);
         });
 
-    cvarManager->log("Takeoff Coach 5.8.0 Live Takeoff loaded.");
+    cvarManager->log("Takeoff Coach 5.9.0 Live Interception loaded.");
 }
 
 void TakeoffCoach::onUnload()
@@ -500,11 +500,6 @@ bool TakeoffCoach::generateScenario(Scenario& scenario, ScenarioValidation& vali
     scenario.objective = chooseObjective();
     scenario.guidanceStyle = static_cast<GuidanceStyle>(std::clamp(getInt("tc_guidance_style"), 0, 1));
     const int maximumBounces = std::max(0, getInt("tc_max_bounces"));
-    if (maximumBounces > 0)
-    {
-        std::uniform_int_distribution<int> bounceTier(0, maximumBounces);
-        scenario.preferredBounceCount = bounceTier(rng_);
-    }
     const float setupAngle = sample("tc_setup_rotation_min", "tc_setup_rotation_max") * DEG_TO_RAD;
     const Vector sceneForward = rotate2D(Vector{1.0f, 0.0f, 0.0f}, setupAngle);
     const Vector sceneSide{-sceneForward.Y, sceneForward.X, 0.0f};
@@ -556,7 +551,7 @@ bool TakeoffCoach::generateScenario(Scenario& scenario, ScenarioValidation& vali
     for (float t = 0.0f; t <= maxContact; t += predictionDt)
     {
         if (t >= minContact
-            && predictedBounces == scenario.preferredBounceCount
+            && predictedBounces <= maximumBounces
             && predictedPosition.Z >= minHeight
             && predictedPosition.Z <= maxHeight
             && (scenario.objective != Objective::Shoot || predictedVelocity.Z < 0.0f)
@@ -653,7 +648,7 @@ TakeoffCoach::ScenarioValidation TakeoffCoach::validateScenario(const Scenario& 
         }
 
         if (time >= minContact
-            && bounceCount == scenario.preferredBounceCount
+            && bounceCount <= maximumBounces
             && position.Z >= minHeight
             && position.Z <= maxHeight)
         {
@@ -940,6 +935,92 @@ void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
     if (now - attempt_.lastSolveAt >= 1.0f / hz)
     {
         attempt_.lastSolveAt = now;
+
+        // Keep the ball interception prediction live while grounded and before
+        // commitment.  Rebuild from the observed ball state, then solve from
+        // the observed car state.  Once the cue is green or the player jumps,
+        // the selected interception remains frozen.
+        if (!attempt_.cueTriggered && attempt_.phase == Phase::Reading)
+        {
+            attempt_.ballPath = buildBallPath(
+                ball.GetLocation(), ball.GetVelocity(), ball.GetAngularVelocity(), now);
+
+            Solution refreshed;
+            ContactTarget refreshedTarget;
+
+            // Preserve the chosen logical opportunity while continuously
+            // correcting its ball position/velocity from the live prediction.
+            // If it leaves the allowed height/bounce region or becomes
+            // unreachable, select a new chronological (Read) or random viable
+            // (Cue) opportunity from the remaining play.
+            if (attempt_.candidateTarget.valid
+                && attempt_.candidateTarget.contactAbsoluteTime > now)
+            {
+                auto it = std::lower_bound(
+                    attempt_.ballPath.begin(), attempt_.ballPath.end(),
+                    attempt_.candidateTarget.contactAbsoluteTime,
+                    [](const BallPredictionSlice& slice, float time)
+                    { return slice.absoluteTime < time; });
+                if (it != attempt_.ballPath.end())
+                {
+                    float minHeight = getFloat("tc_target_height_min");
+                    float maxHeight = getFloat("tc_target_height_max");
+                    if (minHeight > maxHeight) std::swap(minHeight, maxHeight);
+                    if (it->bounceCount <= getInt("tc_max_bounces")
+                        && it->supportedGeometry
+                        && it->position.Z >= minHeight
+                        && it->position.Z <= maxHeight
+                        && (attempt_.objective != Objective::Shoot
+                            || it->velocity.Z < 0.0f))
+                    {
+                        refreshedTarget = attempt_.candidateTarget;
+                        refreshedTarget.ballPosition = it->position;
+                        refreshedTarget.ballVelocity = it->velocity;
+                        refreshedTarget.bounceCount = it->bounceCount;
+                        refreshedTarget.lastSurface = it->lastBounceSurface;
+                        if (attempt_.objective == Objective::Shoot)
+                        {
+                            const Vector goalDirection = normalized2D(
+                                refreshedTarget.desiredGoalPoint - it->position);
+                            refreshedTarget.desiredFacingDirection = goalDirection;
+                            refreshedTarget.desiredCarPosition = it->position
+                                - goalDirection * 145.0f
+                                - Vector{0.0f, 0.0f, 45.0f};
+                        }
+                        else
+                        {
+                            refreshedTarget.desiredFacingDirection = normalized2D(
+                                it->position - car.GetLocation());
+                            refreshedTarget.desiredCarPosition = it->position
+                                - refreshedTarget.desiredFacingDirection * 145.0f
+                                - Vector{0.0f, 0.0f, 45.0f};
+                        }
+                        refreshed = solveTargetWithProfiles(car, refreshedTarget, now);
+                        if (!refreshed.valid)
+                            refreshed = buildSimpleFallback(car, refreshedTarget, now);
+                    }
+                }
+            }
+
+            if (!refreshedTarget.valid || !refreshed.valid)
+                refreshedTarget = selectContactTarget(
+                    car, attempt_.ballPath, now, &refreshed);
+
+            if (refreshedTarget.valid && refreshed.valid)
+            {
+                attempt_.candidateTarget = refreshedTarget;
+                attempt_.validationCandidate = refreshed;
+                attempt_.solution = refreshed;
+                attempt_.liveEstimatedContactAbsolute = refreshedTarget.contactAbsoluteTime;
+                attempt_.cueTime = refreshed.idealJumpAbsolute
+                    - getFloat("tc_reaction_allowance_ms") / 1000.0f;
+            }
+            else
+            {
+                attempt_.candidateTarget = ContactTarget{};
+                attempt_.validationCandidate = Solution{};
+            }
+        }
         if (!attempt_.targetLocked)
         {
             if (attempt_.ballPath.empty())
@@ -1064,6 +1145,7 @@ void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
                 && attempt_.validationCandidate.valid && now >= attempt_.cueTime)
             {
                 attempt_.cueTriggered = true;
+                attempt_.optimalContactAbsolute = attempt_.candidateTarget.contactAbsoluteTime;
                 attempt_.frozenCueTime = attempt_.cueTime;
                 attempt_.cueAbsolute = attempt_.frozenCueTime;
                 attempt_.lockedTarget = attempt_.candidateTarget;
@@ -1117,6 +1199,7 @@ void TakeoffCoach::updateReading(CarWrapper car, BallWrapper ball, float now)
     if (attempt_.guidanceStyle == GuidanceStyle::ReactionCue && !attempt_.cueTriggered && now >= attempt_.cueTime)
     {
         attempt_.cueTriggered = true;
+        attempt_.optimalContactAbsolute = attempt_.lockedTarget.contactAbsoluteTime;
         attempt_.frozenCueTime = attempt_.cueTime;
         attempt_.lockedTarget = attempt_.lockedSolution.target;
         attempt_.solution = attempt_.lockedSolution;
@@ -1472,28 +1555,40 @@ Vector TakeoffCoach::chooseGoalPoint(const ContactTarget& base, Vector carPositi
 TakeoffCoach::ContactTarget TakeoffCoach::selectContactTarget(
     CarWrapper car, const std::vector<BallPredictionSlice>& path, float now, Solution* selectedSolution) const
 {
-    struct Candidate { ContactTarget target; float delay; float correction; bool preBounce; bool descending; };
-    struct Ranked { ContactTarget target; Solution solution; float delay; float correction; bool preBounce; bool descending; };
-    std::vector<Candidate> candidates;
+    struct ReachableCandidate
+    {
+        ContactTarget target;
+        Solution solution;
+    };
+
+    std::vector<ReachableCandidate> reachable;
     float minHeight = getFloat("tc_target_height_min");
     float maxHeight = getFloat("tc_target_height_max");
     if (minHeight > maxHeight) std::swap(minHeight, maxHeight);
-    const float minContact = getFloat("tc_contact_min");
-    const float maxContact = getFloat("tc_contact_max");
 
+    const float minContact = getFloat("tc_contact_min");
+    const float maxContact = std::min(10.0f, getFloat("tc_prediction_horizon"));
+    const int maximumBounces = std::max(0, getInt("tc_max_bounces"));
+    const bool cueMode = attempt_.guidanceStyle == GuidanceStyle::ReactionCue;
+
+    const_cast<Attempt&>(attempt_).targetCandidatesTested = 0;
+    const_cast<Attempt&>(attempt_).reachableCandidates = 0;
+    const_cast<Attempt&>(attempt_).profileSimulations = 0;
+    const auto solveStarted = std::chrono::steady_clock::now();
+
+    // Follow the predicted play chronologically.  The bounce count is a hard
+    // upper bound, not a requested tier and not a ranking preference.
     for (const BallPredictionSlice& slice : path)
     {
         const float delay = slice.absoluteTime - now;
-        if (delay < minContact || delay > maxContact) continue;
+        if (delay < minContact) continue;
+        if (delay > maxContact) break;
+        if (slice.bounceCount > maximumBounces) break;
         if (!slice.supportedGeometry && getBool("tc_reject_unsupported_geometry")) break;
-        if (slice.bounceCount > getInt("tc_max_bounces")) continue;
-        if (slice.bounceCount != attempt_.scenario.preferredBounceCount) continue;
         if (slice.position.Z < minHeight || slice.position.Z > maxHeight) continue;
-        const bool preBounce = slice.bounceCount == 0;
-        if (!preBounce && getInt("tc_max_bounces") <= 0) continue;
-        const bool descending = slice.velocity.Z < 0.0f;
-        if (attempt_.objective == Objective::Shoot && !descending) continue;
-        if (attempt_.objective != Objective::Shoot && getBool("tc_fast_use_descending_only") && !descending) continue;
+        if (attempt_.objective == Objective::Shoot && slice.velocity.Z >= 0.0f) continue;
+        if (attempt_.objective != Objective::Shoot
+            && getBool("tc_fast_use_descending_only") && slice.velocity.Z >= 0.0f) continue;
 
         ContactTarget target;
         target.valid = true;
@@ -1508,111 +1603,82 @@ TakeoffCoach::ContactTarget TakeoffCoach::selectContactTarget(
             target.desiredGoalPoint = chooseGoalPoint(target, car.GetLocation());
             const Vector goalDirection = normalized2D(target.desiredGoalPoint - target.ballPosition);
             target.desiredFacingDirection = goalDirection;
-            target.desiredCarPosition = target.ballPosition - goalDirection * 145.0f - Vector{0, 0, 45};
-            // Informational approximation only. It never rejects a reachable target.
-            const Vector normal = normalized(goalDirection + Vector{0, 0, 0.06f});
-            const float relativeNormal = std::max(0.0f, dot(car.GetVelocity() - slice.velocity, normal));
-            target.predictedOutgoingVelocity = slice.velocity + normal * (380.0f + 1.25f * relativeNormal);
+            target.desiredCarPosition = target.ballPosition
+                - goalDirection * 145.0f - Vector{0.0f, 0.0f, 45.0f};
+
+            // Shoot validity is deliberately permissive: the interception must
+            // put the car on the side opposite a net and point the contact
+            // generally toward it.  Shot-quality math ranks/labels the result;
+            // it does not erase an otherwise humanly reachable opportunity.
+            const Vector approachThroughBall = normalized2D(
+                target.ballPosition - target.desiredCarPosition);
+            if (dot(approachThroughBall, goalDirection) < 0.70f) continue;
+
+            const Vector normal = normalized(goalDirection + Vector{0.0f, 0.0f, 0.06f});
+            const float relativeNormal = std::max(
+                0.0f, dot(car.GetVelocity() - slice.velocity, normal));
+            target.predictedOutgoingVelocity = slice.velocity
+                + normal * (380.0f + 1.25f * relativeNormal);
             target.predictedShotSpeed = length(target.predictedOutgoingVelocity);
-            target.shotAimErrorDeg = std::abs(signedAngleDeg2D(normalized2D(target.predictedOutgoingVelocity), goalDirection));
+            target.shotAimErrorDeg = std::abs(signedAngleDeg2D(
+                normalized2D(target.predictedOutgoingVelocity), goalDirection));
         }
         else
         {
-            target.desiredFacingDirection = normalized2D(target.ballPosition - car.GetLocation());
-            target.desiredCarPosition = target.ballPosition - target.desiredFacingDirection * 145.0f - Vector{0, 0, 45};
+            target.desiredFacingDirection = normalized2D(
+                target.ballPosition - car.GetLocation());
+            target.desiredCarPosition = target.ballPosition
+                - target.desiredFacingDirection * 145.0f
+                - Vector{0.0f, 0.0f, 45.0f};
         }
 
-        if (target.ballPosition.Z < minHeight || target.ballPosition.Z > maxHeight)
-            continue;
         if (!cheapReachable(car, target, now)) continue;
-        const float correction = std::abs(signedAngleDeg2D(
-            normalized2D(forwardFromRotator(car.GetRotation())),
-            normalized2D(target.ballPosition - car.GetLocation())));
-        candidates.push_back({target, delay, correction, preBounce, descending});
+        ++const_cast<Attempt&>(attempt_).targetCandidatesTested;
+
+        Solution solution = solveTargetWithProfiles(car, target, now);
+        if (!solution.valid) solution = buildSimpleFallback(car, target, now);
+        if (!solution.valid) continue;
+
+        // The minimum preparation delay constrains the accepted physical jump,
+        // not merely the visual cue lead.
+        const float minimumPreparation =
+            getFloat("tc_min_initial_jump_delay_ms") / 1000.0f;
+        if (solution.idealJumpAbsolute - attempt_.scenarioStartAbsolute
+            < minimumPreparation)
+            continue;
+
+        solution.target = target;
+        reachable.push_back({target, solution});
+        ++const_cast<Attempt&>(attempt_).reachableCandidates;
+
+        // READ: the first reachable chronological passage through the selected
+        // height band is the interception.  solveTargetWithProfiles returns the
+        // shortest viable aerial for that fixed contact, hence the latest viable
+        // grounded jump.
+        if (!cueMode)
+            break;
+
+        // CUE needs a pool of humanly doable opportunities throughout the play.
+        // Keep it bounded and deterministic in cost, then choose one at random.
+        if (reachable.size() >= 24)
+            break;
     }
 
-    if (candidates.empty()) return ContactTarget{};
-
-    std::stable_sort(candidates.begin(), candidates.end(), [this](const Candidate& a, const Candidate& b)
-    {
-        if (a.target.bounceCount != b.target.bounceCount)
-            return a.target.bounceCount < b.target.bounceCount;
-        if (attempt_.objective == Objective::Shoot)
-        {
-            if (a.descending != b.descending) return a.descending > b.descending;
-            if (std::abs(a.target.shotAimErrorDeg - b.target.shotAimErrorDeg) > 0.01f)
-                return a.target.shotAimErrorDeg < b.target.shotAimErrorDeg;
-        }
-        if (std::abs(a.delay - b.delay) > 0.001f) return a.delay < b.delay;
-        return a.correction < b.correction;
-    });
-
-    std::vector<Ranked> reachable;
-    const auto solveStarted = std::chrono::steady_clock::now();
-    const int maximumBounces = std::max(0, getInt("tc_max_bounces"));
-    int tested = 0;
-    const_cast<Attempt&>(attempt_).targetCandidatesTested = 0;
-    const_cast<Attempt&>(attempt_).reachableCandidates = 0;
-    const_cast<Attempt&>(attempt_).profileSimulations = 0;
-
-    // Strict bounce tiers: only move to the next bounce count when no genuinely
-    // reachable candidate exists in the lower tier.
-    for (int bounceTier = 0; bounceTier <= maximumBounces && reachable.empty(); ++bounceTier)
-    {
-        int testedInTier = 0;
-        for (const Candidate& candidate : candidates)
-        {
-            if (candidate.target.bounceCount != bounceTier)
-                continue;
-            if (testedInTier >= 16)
-                break;
-
-            ++testedInTier;
-            ++tested;
-            Solution solution = solveTargetWithProfiles(car, candidate.target, now);
-            if (!solution.valid)
-                solution = buildSimpleFallback(car, candidate.target, now);
-            if (!solution.valid)
-                continue;
-
-            ++const_cast<Attempt&>(attempt_).reachableCandidates;
-            reachable.push_back({
-                candidate.target,
-                solution,
-                candidate.delay,
-                candidate.correction,
-                candidate.preBounce,
-                candidate.descending});
-        }
-    }
-
-    const_cast<Attempt&>(attempt_).targetCandidatesTested = tested;
+    const auto solveEnded = std::chrono::steady_clock::now();
     const_cast<Attempt&>(attempt_).lastSolveDurationMs =
-        std::chrono::duration<float, std::milli>(
-            std::chrono::steady_clock::now() - solveStarted).count();
+        std::chrono::duration<float, std::milli>(solveEnded - solveStarted).count();
 
     if (reachable.empty()) return ContactTarget{};
 
-    std::stable_sort(reachable.begin(), reachable.end(), [this](const Ranked& a, const Ranked& b)
+    size_t index = 0;
+    if (cueMode && reachable.size() > 1)
     {
-        if (attempt_.objective == Objective::Shoot)
-        {
-            if (std::abs(a.target.shotAimErrorDeg - b.target.shotAimErrorDeg) > 0.01f)
-                return a.target.shotAimErrorDeg < b.target.shotAimErrorDeg;
-        }
-        if (std::abs(a.delay - b.delay) > 0.001f)
-            return a.delay < b.delay;
-        if (std::abs(a.correction - b.correction) > 0.01f)
-            return a.correction < b.correction;
-        return a.solution.robustness > b.solution.robustness;
-    });
+        std::uniform_int_distribution<size_t> choose(0, reachable.size() - 1);
+        index = choose(const_cast<TakeoffCoach*>(this)->rng_);
+    }
 
-    Ranked best = reachable.front();
-    // The selected solution already contains the exact live takeoff state used by the aerial simulation.
-
-    if (selectedSolution) *selectedSolution = best.solution;
-    const_cast<Attempt&>(attempt_).solverBackend = best.solution.simpleFallback ? "SIMPLE FALLBACK" : "ADVANCED + LIVE TAKEOFF";
-    return best.target;
+    if (selectedSolution) *selectedSolution = reachable[index].solution;
+    return reachable[index].target;
 }
 
 TakeoffCoach::TakeoffState TakeoffCoach::predictLiveTakeoff(
@@ -2148,20 +2214,41 @@ void TakeoffCoach::renderHud(CanvasWrapper canvas)
 
     if (indicatorsEnabled && getBool("tc_show_height"))
     {
-        drawGauge(
-            canvas,
-            gaugeOrigin(gaugeIndex++),
-            "HEIGHT",
-            (heightAvailable ? format0(actualHeight) + " uu" : "n/a"),
-            heightError,
-            halfGreen,
-            halfGreen,
-            halfGreen
-                + getFloat("tc_height_yellow_margin"),
-            halfGreen
-                + getFloat("tc_height_yellow_margin"),
-            std::max(1.0f, targetCenter),
-            std::max(1.0f, 2044.0f - targetCenter));
+        if (cueMode)
+        {
+            const bool contactGapAvailable = feedback && attempt_.touched
+                && attempt_.optimalContactAbsolute > 0.0f;
+            const float contactGapMs = contactGapAvailable
+                ? (attempt_.actualTouchAbsolute
+                    - attempt_.optimalContactAbsolute) * 1000.0f
+                : 0.0f;
+            drawGauge(
+                canvas,
+                gaugeOrigin(gaugeIndex++),
+                "CONTACT GAP",
+                contactGapAvailable
+                    ? format0(contactGapMs) + " ms"
+                    : "—",
+                contactGapMs,
+                60.0f, 60.0f,
+                180.0f, 180.0f,
+                1000.0f, 1000.0f);
+        }
+        else
+        {
+            drawGauge(
+                canvas,
+                gaugeOrigin(gaugeIndex++),
+                "HEIGHT",
+                (heightAvailable ? format0(actualHeight) + " uu" : "n/a"),
+                heightError,
+                halfGreen,
+                halfGreen,
+                halfGreen + getFloat("tc_height_yellow_margin"),
+                halfGreen + getFloat("tc_height_yellow_margin"),
+                std::max(1.0f, targetCenter),
+                std::max(1.0f, 2044.0f - targetCenter));
+        }
     }
 
     const Solution visualTarget =
@@ -2477,7 +2564,7 @@ void TakeoffCoach::RenderSettings()
     style.GrabRounding = 6.0f;
     style.ChildRounding = 8.0f;
     style.PopupRounding = 6.0f;
-    ImGui::TextUnformatted("Takeoff Coach build: 5.8.0-live-takeoff");
+    ImGui::TextUnformatted("Takeoff Coach build: 5.9.0-live-interception");
     if (ImGui::BeginTabBar("TakeoffCoachTabs"))
     {
         if (ImGui::BeginTabItem("Drill"))

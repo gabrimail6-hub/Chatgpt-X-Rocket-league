@@ -1,11 +1,11 @@
-# Takeoff Coach 5.8.0 — Live Takeoff
+# Takeoff Coach 5.9.0 — Live Interception
 
 - Blue takeoff marker and reachability simulation now use the same live grounded continuation from the current car position, velocity, nose and controller input.
 - The locked contact target remains stable, while the projected takeoff position keeps updating until the real jump.
 - Removed ideal automatic ground steering from the published aerial solution.
 - Rounded HUD rectangles are now filled once per scanline, eliminating the darker double-opacity rectangle underneath.
 
-# 5.8.0 — Reach + Bounce Fix
+# 5.9.0 — Live Interception
 
 - Fixed prediction horizon at 10 seconds.
 - Replaced cue-lead semantics with a true minimum preparation-time constraint, adjustable from 0 to 6000 ms and defaulting to 1500 ms.

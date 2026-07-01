@@ -1,8 +1,8 @@
-# Takeoff Coach 5.8.0 — Reach + Bounce Fix
+# Takeoff Coach 5.9.0 — Live Interception
 
 Takeoff Coach is a BakkesMod Freeplay drill for Fast Touch, Shoot, and Full Random scenarios.
 
-## 5.8.0 behavior
+## 5.9.0 behavior
 
 - Fixed 10-second ball prediction horizon.
 - `Minimum preparation time before jump` is a real solution constraint, not merely a cue offset.

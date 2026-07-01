@@ -113,7 +113,6 @@ private:
         Objective objective = Objective::FastTouch;
         GuidanceStyle guidanceStyle = GuidanceStyle::Read;
         int goalSign = 1;
-        int preferredBounceCount = 0;
     };
 
     struct ScenarioValidation;
@@ -261,6 +260,8 @@ private:
         float reactionLossMs = 0.0f;
         float actualTouchAbsolute = 0.0f;
         float possibleTimeSavedMs = 0.0f;
+        float optimalContactAbsolute = 0.0f;
+        float liveEstimatedContactAbsolute = 0.0f;
         bool reactionCaptured = false;
         bool targetReachableAfterJump = false;
         Vector snapshotBallPosition{};
