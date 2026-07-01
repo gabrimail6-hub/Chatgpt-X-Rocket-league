@@ -90,6 +90,18 @@ private:
         bool handbrake = false;
     };
 
+    enum class RejectionReason
+    {
+        None,
+        NoTargetInHeightBand,
+        TargetAfterFirstCollision,
+        CeilingBeforeTarget,
+        UnreachableTarget,
+        InvalidShootApproach,
+        PredictionLowConfidence,
+        ValidationDiverged
+    };
+
     struct Scenario
     {
         Vector carPosition{};
@@ -101,6 +113,8 @@ private:
         GuidanceStyle guidanceStyle = GuidanceStyle::Read;
         int goalSign = 1;
     };
+
+    struct ScenarioValidation;
 
     struct BounceEvent
     {
@@ -167,6 +181,15 @@ private:
         bool simpleFallback = false;
         AerialProfile profile = AerialProfile::FastAerial;
         ContactTarget target{};
+    };
+
+    struct ScenarioValidation
+    {
+        bool valid = false;
+        RejectionReason reason = RejectionReason::None;
+        std::vector<BallPredictionSlice> path;
+        ContactTarget target{};
+        Solution reach{};
     };
 
     struct Attempt
@@ -271,14 +294,19 @@ private:
     Attempt attempt_;
     SessionStats session_;
     int consecutiveRerolls_ = 0;
+    bool automaticRerollsStopped_ = false;
+    uint64_t currentGeneration_ = 0;
     std::mt19937 rng_{std::random_device{}()};
 
     void registerCvars();
     void requestNewScenario();
+    void requestManualScenario();
+    void requestAutomaticReroll();
+    void clearAutomaticRerollLatch();
     void startScenarioNow(uint64_t generation);
-    bool generateScenario(Scenario& scenario);
+    bool generateScenario(Scenario& scenario, ScenarioValidation& validation);
+    ScenarioValidation validateScenario(const Scenario& scenario) const;
     bool applyScenario(Scenario scenario);
-    bool isScenarioSafe(Scenario scenario) const;
 
     void onVehicleInput(CarWrapper car, void* params, std::string eventName);
     void onBallTouchEvent(std::string eventName);

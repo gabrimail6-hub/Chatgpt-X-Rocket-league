@@ -17,4 +17,9 @@ Runtime fixes in this build:
 - Height uses the real live ball-centre height independently of Timing visibility.
 - Setup memory contains only Shoot and Fast Touch setup ranges.
 
-Build identifier shown in Settings: `5.3.0-runtime-wiring`.
+Build identifier shown in Settings: `5.4.0-validation-recovery`.
+
+
+## Scenario validation and recovery
+
+Shoot scenarios are validated before application: a descending target must exist inside the selected ball-centre height band and before the first collision. Automatic rerolls pause at the rejection cap, while **New Scenario** always clears the cap and starts a fresh generation sequence. The target-height preference is global; Fast Touch and Shoot setup memories contain spawn and motion ranges only.

@@ -1,18 +1,14 @@
 # Changelog
 
-## 5.3.0-runtime-wiring
+## 5.4.0 — Validation and recovery
 
-- Fixed missing `tc_guidance_style` assignment when a scenario starts.
-- Reset cue and reaction state on every scenario.
-- Made the candidate solution feed Timing and Angle before lock.
-- Enforced the full target-height range for every selection path.
-- Removed Reaction target-policy controls and random-policy behavior.
-- Replaced wall-clock-aborted candidate solving with a deterministic 12-finalist pass.
-- Replaced weighted target ranking with explicit Fast Touch and Shoot ordering.
-- Added strict pre-bounce selection with one global optional post-bounce fallback.
-- Prevented Shoot generation from accepting a ceiling/wall/floor collision before a descending target crossing.
-- Removed boost-deficit target rejection and user-facing profile/backend controls.
-- Replaced displayed bot-steering takeoff positions with live-input continuation estimates.
-- Removed Custom preset storage and non-setup fields from preset memory.
-- Made Height independent from Timing visibility.
-- Added visible build identifier and cue color controls.
+- Manual **New Scenario** now clears the automatic-reroll latch and invalidates stale callbacks.
+- Automatic rerolls stop recoverably and instruct the user to press New Scenario.
+- Scenario generation now validates a pre-collision target before applying the setup.
+- Shoot vertical velocity is resampled against available ceiling headroom.
+- Shoot accepts only descending, in-band, pre-collision targets by default.
+- Generated target and initial reach estimate seed runtime verification instead of being discarded.
+- Target contact height is global and no longer stored in Fast/Shoot setup memory.
+- Ball-centre target-height UI is explicitly 93–1951 uu.
+- Solver/Advanced and Diagnostics are hidden from the production settings UI.
+- The working reaction cue and Fast/Shoot setup memories are preserved.
